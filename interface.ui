@@ -7,9 +7,8 @@
       <object id="grid" class="GtkGrid">
         <property name="visible">True</property>
         <child>
-          <object id="button1" class="GtkButton">
+          <object id="searchentry" class="GtkEntry">
             <property name="visible">True</property>
-            <property name="label">Button 1</property>
           </object>
           <packing>
             <property name="left-attach">0</property>
@@ -17,9 +16,9 @@
           </packing>
         </child>
         <child>
-          <object id="button2" class="GtkButton">
+          <object id="send" class="GtkButton">
             <property name="visible">True</property>
-            <property name="label">Button 2</property>
+            <property name="label">Send</property>
           </object>
           <packing>
             <property name="left-attach">1</property>
