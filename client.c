@@ -15,6 +15,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <signal.h>
 #include <gtk/gtk.h>
 
 /*
@@ -46,6 +47,7 @@ GtkWidget *entry;
 
 static void quit_app(GtkWidget *widget, gpointer data);
 static void send_msg(GtkWidget *widget, gpointer data);
+void handle_signal(int sig);
 
 /*
     Main
@@ -53,11 +55,18 @@ static void send_msg(GtkWidget *widget, gpointer data);
 
 int main(int argc, char *argv[]) {
     GError *error = NULL;
+    struct sigaction action;
 
     /* Vérification des arguments */
     if (argc != 3) { 
         printf("Veuillez renseigner ip et port \n");
         return EXIT_FAILURE;
+    }
+
+    /* Gestion des signaux */
+    action.sa_handler = &handle_signal;
+    if (sigaction(SIGINT, &action, NULL) < 0) {
+        perror("Gestion signaux impossible\n");
     }
 
     /* Création socket client */
@@ -158,4 +167,11 @@ static void send_msg(GtkWidget *widget, gpointer data) {
     }
 
     gtk_entry_set_text(GTK_ENTRY(entry), "");
+}
+
+void handle_signal(int signal) {
+    if (signal == SIGINT) {
+        close(socket_client);
+        gtk_main_quit();
+    }
 }

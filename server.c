@@ -38,17 +38,21 @@
 */
 
 int socket_server;
+int socket_client;
+int off_server = 0;
 
 /*
     Déclaration des fonctions
 */
-
+void handle_signal(int sig);
+void shut_down(void);
 
 /*
     Main
 */
 
 int main(int argc, char *argv[]) {
+    struct sigaction action;
     struct sockaddr_in addr_server, addr_client;
     socklen_t addr_len = sizeof(addr_client);
     char buffer[BUFFER_SIZE];
@@ -59,6 +63,12 @@ int main(int argc, char *argv[]) {
         printf("\n => Arrêt du serveur\n");
         printf(" => adresse ip et port non renseignés\n");
         return EXIT_FAILURE;
+    }
+
+    /* Gestion des signaux */
+    action.sa_handler = &handle_signal;
+    if (sigaction(SIGINT, &action, NULL) < 0) {
+        perror("\n => Gestion signaux impossible\n");
     }
 
     socket_server = socket(SOCK_DOMAIN, SOCK_TYPE, SOCK_PROTOCOL);
@@ -83,7 +93,7 @@ int main(int argc, char *argv[]) {
 
     printf("\n => Démarrage du serveur\n");
 
-    int socket_client = accept(socket_server, (struct sockaddr *)&addr_client, &addr_len);
+    socket_client = accept(socket_server, (struct sockaddr *)&addr_client, &addr_len);
     if (socket_client < 0) {
         perror("\n => Connexion client impossible\n");
         close(socket_server);
@@ -96,7 +106,7 @@ int main(int argc, char *argv[]) {
     char *ack = "ACK";
     send(socket_client, ack, strlen(ack), 0);
 
-    while (1) {
+    while (off_server == 0) {
         int nb_char = recv(socket_client, buffer, BUFFER_SIZE -1, 0);
         if (nb_char <= 0) {
             perror("\n => Erreur reception message\n");
@@ -106,19 +116,30 @@ int main(int argc, char *argv[]) {
         buffer[nb_char] = '\0';
         printf("\n => Message: %s\n", buffer);
 
-        if (strcmp(buffer, "exit") == 0) {
+        /*if (strcmp(buffer, "exit") == 0) {
             printf("\n => Fermeture connexion\n");
             break;
-        } 
+        } */
     }
 
-    close(socket_client);
-    close(socket_server);
-
-    printf("\n => Arrêt du serveur\n");
+    shut_down();
     return 0;
 }
 
 /*
     Définition des fonctions
 */
+
+void handle_signal(int signal) {
+    if (signal == SIGINT) { 
+        off_server = 1;
+        shut_down(); 
+    }
+}
+
+void shut_down(void) {
+    // Gérer l'envoi d'un message aux clients
+    close(socket_client);
+    close(socket_server);
+    printf("\n => Arrêt du serveur\n");
+}
