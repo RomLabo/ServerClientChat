@@ -6,12 +6,12 @@ des utilisateurs connectés au serveur.
 
 C'est une application graphique utilisant la librairie GTK 3.0
 
-pour compiler l'application client utilisant la librairie GTK,
-utiliser la commande suivante : 
+pour compiler l'application client utilisant la librairie GTK 
+##
         gcc `pkg-config --cflags gtk+-3.0` -o client client.c `pkg-config --libs gtk+-3.0`
 
 pour compiler l'application server
-utiliser la commande suivante :
+##
         gcc server.c -o server -Wall
 
 Par défaut le serveur écoute sur l'adresse 127.0.0.1 
