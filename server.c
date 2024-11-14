@@ -30,6 +30,7 @@
 #define SOCK_PROTOCOL 0
 
 #define PORT 8080
+#define ADDR_INET "127.0.0.1"
 #define LIMIT_CLIENT 5
 #define BUFFER_SIZE 512
 
@@ -40,12 +41,15 @@
 int socket_server;
 int socket_client;
 int off_server = 0;
+struct sockaddr_in addr_server;
 
 /*
     Déclaration des fonctions
 */
 void handle_signal(int sig);
+void acquit_connection(void);
 void shut_down(void);
+void setup_addr(int argc, char *argv[]);
 
 /*
     Main
@@ -53,17 +57,20 @@ void shut_down(void);
 
 int main(int argc, char *argv[]) {
     struct sigaction action;
-    struct sockaddr_in addr_server, addr_client;
+    struct sockaddr_in addr_client;
     socklen_t addr_len = sizeof(addr_client);
     char buffer[BUFFER_SIZE];
     
     printf("Serveur TCP \n");
 
-    if (argc != 3) {
+    if (argc > 3) {
         printf("\n => Arrêt du serveur\n");
-        printf(" => adresse ip et port non renseignés\n");
+        printf(" => Trop d arguments renseignés \n");
         return EXIT_FAILURE;
     }
+
+    /* Configuration de l'adresse du serveur */
+    setup_addr(argc, argv);
 
     /* Gestion des signaux */
     action.sa_handler = &handle_signal;
@@ -76,10 +83,6 @@ int main(int argc, char *argv[]) {
         perror("\n => Création socket impossible\n");
         return EXIT_FAILURE;
     }
-
-    addr_server.sin_family = SOCK_DOMAIN;
-    addr_server.sin_addr.s_addr = inet_addr(argv[1]);
-    addr_server.sin_port = htons(atoi(argv[2]));
 
     if (bind(socket_server, (struct sockaddr *)&addr_server, sizeof(addr_server)) < 0) {
         perror("\n => Liaison socket impossible\n");
@@ -100,26 +103,26 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    printf("\n => Connexion client acceptée\n");
-
-    /* Acquittement de la connexion */
-    char *ack = "ACK";
-    send(socket_client, ack, strlen(ack), 0);
+    acquit_connection();
 
     while (off_server == 0) {
-        int nb_char = recv(socket_client, buffer, BUFFER_SIZE -1, 0);
+        int nb_char = recv(socket_client, buffer, BUFFER_SIZE -2, 0);
         if (nb_char <= 0) {
             perror("\n => Erreur reception message\n");
             break;
         }
 
-        buffer[nb_char] = '\0';
-        printf("\n => Message: %s\n", buffer);
-
-        /*if (strcmp(buffer, "exit") == 0) {
-            printf("\n => Fermeture connexion\n");
-            break;
-        } */
+        if (nb_char < BUFFER_SIZE -2) { 
+            buffer[nb_char] = '\n';
+            buffer[nb_char + 1] = '\0';
+        } else { 
+            buffer[nb_char -1] = '\n';
+            buffer[nb_char] = '\0';
+        }
+        
+        printf(" => Message: %s", buffer);
+        send(socket_client, buffer, sizeof(buffer) -1, 0);
+        memset(buffer, 0, sizeof(buffer));
     }
 
     shut_down();
@@ -131,15 +134,33 @@ int main(int argc, char *argv[]) {
 */
 
 void handle_signal(int signal) {
-    if (signal == SIGINT) { 
-        off_server = 1;
-        shut_down(); 
-    }
+    if (signal == SIGINT) { shut_down(); }
+}
+
+void acquit_connection(void) {
+    char *ack = "ACK";
+    send(socket_client, ack, strlen(ack), 0);
+    printf("\n => Connexion client acceptée\n");
 }
 
 void shut_down(void) {
+    off_server = 1;
     // Gérer l'envoi d'un message aux clients
     close(socket_client);
     close(socket_server);
     printf("\n => Arrêt du serveur\n");
+}
+
+void setup_addr(int argc, char *argv[]) {
+    addr_server.sin_family = SOCK_DOMAIN;
+    if (argc == 3) {
+        addr_server.sin_addr.s_addr = inet_addr(argv[1]);
+        addr_server.sin_port = htons(atoi(argv[2]));
+    } else if (argc == 2) {
+        addr_server.sin_addr.s_addr = inet_addr(argv[1]);
+        addr_server.sin_port = htons(PORT);
+    } else if (argc == 1) {
+        addr_server.sin_addr.s_addr = inet_addr(ADDR_INET);
+        addr_server.sin_port = htons(PORT);
+    }
 }

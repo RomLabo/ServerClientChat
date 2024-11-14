@@ -1,44 +1,52 @@
 <interface>
   <object id="window" class="GtkWindow">
     <property name="visible">True</property>
-    <property name="title">Grid</property>
+    <property name="title">Wee Chat</property>
     <property name="border-width">10</property>
     <child>
-      <object id="grid" class="GtkGrid">
+      <object class="GtkBox" id="content_box">
         <property name="visible">True</property>
+        <property name="orientation">vertical</property>
         <child>
-          <object id="searchentry" class="GtkEntry">
+          <object class="GtkScrolledWindow" id="scrolled_window">
             <property name="visible">True</property>
+            <property name="vexpand">True</property>
+            <property name="hexpand">False</property>
+            <child>
+              <object class="GtkTextView" id="text_view">
+                <property name="editable">False</property>
+                <property name="visible">True</property>
+              </object>
+            </child>
           </object>
-          <packing>
-            <property name="left-attach">0</property>
-            <property name="top-attach">0</property>
-          </packing>
         </child>
         <child>
-          <object id="send" class="GtkButton">
+          <object class="GtkBox" id="content_box2">
             <property name="visible">True</property>
-            <property name="label">Send</property>
+            <property name="orientation">horizontal</property>
+            <child>
+              <object id="searchentry" class="GtkEntry">
+                <property name="visible">True</property>
+              </object>
+            </child>
+            <child>
+              <object id="send" class="GtkButton">
+                <property name="visible">True</property>
+                <property name="label">Send</property>
+              </object>
+            </child>
           </object>
-          <packing>
-            <property name="left-attach">1</property>
-            <property name="top-attach">0</property>
-          </packing>
         </child>
         <child>
           <object id="quit" class="GtkButton">
             <property name="visible">True</property>
             <property name="label">Quit</property>
           </object>
-          <packing>
-            <property name="left-attach">0</property>
-            <property name="top-attach">1</property>
-            <property name="width">2</property>
-          </packing>
         </child>
       </object>
-      <packing>
-      </packing>
     </child>
   </object>
 </interface>
+
+
+
