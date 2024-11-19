@@ -121,7 +121,10 @@ int main(int argc, char *argv[]) {
         }
         
         printf(" => Message: %s", buffer);
-        send(socket_client, buffer, sizeof(buffer) -1, 0);
+        if (send(socket_client, buffer, sizeof(buffer) -1, 0) < 0) {
+            perror("\n => Lecture impossible\n");
+            break;
+        }
         memset(buffer, 0, sizeof(buffer));
     }
 
