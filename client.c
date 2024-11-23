@@ -30,7 +30,7 @@
 
 #define PORT 8080
 #define ADDR_INET "127.0.0.1"
-#define BUFFER_SIZE 512
+#define BUFFER_SIZE 264
 
 /*
     Variables
@@ -152,6 +152,11 @@ int main(int argc, char *argv[]) {
 
 static void quit_app(GtkWidget *widget, gpointer data) {
     off_app = 1;
+    char exit_msg[4] = "EXT";
+    
+    if (send(socket_client, exit_msg, 4, 0) < 0) {
+        perror("Envoi message impossible");
+    }
     shutdown(socket_client, 0);
     close(socket_client);
     pthread_join(recv_thread, NULL);
@@ -178,12 +183,12 @@ static void send_msg(GtkWidget *widget, gpointer data) {
 }
 
 void receive_msg(void) {
-    char buffer[BUFFER_SIZE];
+    char buffer_msg[BUFFER_SIZE];
     while (off_app == 0) {
-        int nb_char = recv(socket_client, buffer, BUFFER_SIZE - 1, 0);
+        int nb_char = recv(socket_client, buffer_msg, BUFFER_SIZE - 1, 0);
         if (nb_char <= 0) { break; }
-        buffer[nb_char] = '\0';
-        char *message = g_strdup(buffer);
+        buffer_msg[nb_char] = '\0';
+        char *message = g_strdup(buffer_msg);
         g_idle_add(update_text, message);
     }
     pthread_exit(NULL);

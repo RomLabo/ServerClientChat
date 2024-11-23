@@ -32,14 +32,16 @@
 #define PORT 8080
 #define ADDR_INET "127.0.0.1"
 #define LIMIT_CLIENT 5
-#define BUFFER_SIZE 512
+#define BUFFER_LIMIT 264
+
+const char acquit_msg[4] = "ACK";
 
 /*
     Variables
 */
 
 int socket_server;
-int socket_client;
+// int socket_client;
 int off_server = 0;
 struct sockaddr_in addr_server;
 
@@ -47,9 +49,10 @@ struct sockaddr_in addr_server;
     Déclaration des fonctions
 */
 void handle_signal(int sig);
-void acquit_connection(void);
+void send_acquit(int *socket);
 void shut_down(void);
 void setup_addr(int argc, char *argv[]);
+void handle_client(void *socket_client);
 
 /*
     Main
@@ -59,13 +62,13 @@ int main(int argc, char *argv[]) {
     struct sigaction action;
     struct sockaddr_in addr_client;
     socklen_t addr_len = sizeof(addr_client);
-    char buffer[BUFFER_SIZE];
+    pthread_attr_t attr;
     
-    printf("Serveur TCP \n");
+    printf("[MSG] Démarrage du serveur\n");
 
     if (argc > 3) {
-        printf("\n => Arrêt du serveur\n");
-        printf(" => Trop d arguments renseignés \n");
+        printf("[ERROR] Trop d arguments renseignés \n");
+        printf("[MSG] Arrêt du serveur\n");
         return EXIT_FAILURE;
     }
 
@@ -75,40 +78,50 @@ int main(int argc, char *argv[]) {
     /* Gestion des signaux */
     action.sa_handler = &handle_signal;
     if (sigaction(SIGINT, &action, NULL) < 0) {
-        perror("\n => Gestion signaux impossible\n");
+        perror("[ERROR] Gestion signaux impossible\n");
     }
 
     socket_server = socket(SOCK_DOMAIN, SOCK_TYPE, SOCK_PROTOCOL);
     if (socket_server < 0) {
-        perror("\n => Création socket impossible\n");
+        perror("[ERROR] Création socket impossible\n");
         return EXIT_FAILURE;
     }
 
     if (bind(socket_server, (struct sockaddr *)&addr_server, sizeof(addr_server)) < 0) {
-        perror("\n => Liaison socket impossible\n");
+        close(socket_server);
+        perror("[ERROR] Liaison socket impossible\n");
         return EXIT_FAILURE;
     }
 
     if (listen(socket_server, 5) < 0) {
-        perror("\n => Ecoute impossible\n");
-        return EXIT_FAILURE;
-    }
-
-    printf("\n => Démarrage du serveur\n");
-
-    socket_client = accept(socket_server, (struct sockaddr *)&addr_client, &addr_len);
-    if (socket_client < 0) {
-        perror("\n => Connexion client impossible\n");
         close(socket_server);
+        perror("[ERROR] Ecoute impossible\n");
         return EXIT_FAILURE;
     }
 
-    acquit_connection();
+    printf("[MSG] Démarrage ecoute connexion\n");
 
     while (off_server == 0) {
-        int nb_char = recv(socket_client, buffer, BUFFER_SIZE -2, 0);
+        int socket_client = accept(socket_server, (struct sockaddr *)&addr_client, &addr_len);
+        if (socket_client < 0) {
+            perror("[ERROR] Connexion client impossible\n");
+            close(socket_server);
+            return EXIT_FAILURE;
+        }
+
+        send_acquit(&socket_client);
+
+        pthread_t thread_id;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+        if (pthread_create(&thread_id, &attr, (void*)handle_client, (void*) &socket_client) < 0) {
+            perror("[ERROR] Creation du thread impossible\n");
+            close(socket_client);
+        }
+
+        /*int nb_char = recv(socket_client, buffer, BUFFER_SIZE -2, 0);
         if (nb_char <= 0) {
-            perror("\n => Erreur reception message\n");
+            perror("[ERROR] Reception message client\n");
             break;
         }
 
@@ -122,10 +135,10 @@ int main(int argc, char *argv[]) {
         
         printf(" => Message: %s", buffer);
         if (send(socket_client, buffer, sizeof(buffer) -1, 0) < 0) {
-            perror("\n => Lecture impossible\n");
+            perror("[ERROR] Lecture message impossible\n");
             break;
         }
-        memset(buffer, 0, sizeof(buffer));
+        memset(buffer, 0, sizeof(buffer));*/
     }
 
     shut_down();
@@ -140,18 +153,19 @@ void handle_signal(int signal) {
     if (signal == SIGINT) { shut_down(); }
 }
 
-void acquit_connection(void) {
-    char *ack = "ACK";
-    send(socket_client, ack, strlen(ack), 0);
-    printf("\n => Connexion client acceptée\n");
+void send_acquit(int *socket) {
+    if (send((*socket), acquit_msg, strlen(acquit_msg), 0) < 0) {
+        perror("[ERROR] Envoi acquittement impossible\n");
+        close((*socket));
+    } else { printf("[MSG] Envoi acquittement\n"); }
 }
 
 void shut_down(void) {
     off_server = 1;
     // Gérer l'envoi d'un message aux clients
-    close(socket_client);
+    //close(socket_client);
     close(socket_server);
-    printf("\n => Arrêt du serveur\n");
+    printf("[MSG] Arrêt du serveur\n");
 }
 
 void setup_addr(int argc, char *argv[]) {
@@ -166,4 +180,38 @@ void setup_addr(int argc, char *argv[]) {
         addr_server.sin_addr.s_addr = inet_addr(ADDR_INET);
         addr_server.sin_port = htons(PORT);
     }
+}
+
+void handle_client(void *socket_client) {
+    int socket = *(int*)socket_client;
+
+    char *buffer = (char*)malloc((BUFFER_LIMIT)*sizeof(char));
+    if (buffer == NULL) {
+        perror("[ERROR] Allocation buffer impossible\n");
+        printf("[MSG] Session client fermee\n");
+        close(socket);
+        pthread_exit(NULL);
+    }
+
+    while(1) {
+        int nb_char = recv(socket, buffer, BUFFER_LIMIT -1, 0);
+        if (nb_char <= 0) {
+            perror("[ERROR] Lecture message client impossible\n");
+            break;
+        }
+        buffer[nb_char] = '\0';
+
+        if (strcmp(buffer, "EXT") == 0) { break; }
+        printf("[MSG] Message de %p : %s\n", (void*)&socket, buffer);
+        if (send(socket, buffer, sizeof(buffer) -1, 0) < 0) {
+            perror("[ERROR] Envoi message impossible\n");
+            break;
+        }
+        memset(buffer, 0, BUFFER_LIMIT);
+    }
+
+    printf("[MSG] Session client fermee\n");
+    free(buffer);
+    close(socket);
+    pthread_exit(NULL);
 }
