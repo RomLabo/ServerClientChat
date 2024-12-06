@@ -1,6 +1,6 @@
 /*
 0000000001 Author RomLabo 111111111
-1000111000 client.c 111111111111111
+1000111000 client_gtk.c 11111111111
 1000000001 Created on 08/11/2024 11
 10001000111110000000011000011100001
 10001100011110001100011000101010001
@@ -55,7 +55,7 @@ pthread_t recv_thread;
 static void quit_app(GtkWidget *widget, gpointer data);
 void handle_signal(int sig);
 static void send_msg(GtkWidget *widget, gpointer data);
-void receive_msg(void);
+void receive_msg(void* socket_cl);
 gboolean update_text(gpointer data);
 void setup_addr(int argc, char *argv[]);
 
@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
 
     /* Création du thread pour la réception des messages*/
     pthread_attr_init(&attr);
-    if (pthread_create(&recv_thread, NULL, (void *)receive_msg, NULL) != 0) {
+    if (pthread_create(&recv_thread, NULL, (void *)receive_msg, &socket_client) != 0) {
         perror("Erreur lors de la création du thread");
         return EXIT_FAILURE;
     }
@@ -152,11 +152,11 @@ int main(int argc, char *argv[]) {
 
 static void quit_app(GtkWidget *widget, gpointer data) {
     off_app = 1;
-    char exit_msg[4] = "EXT";
+    // char exit_msg[4] = "EXT";
     
-    if (send(socket_client, exit_msg, 4, 0) < 0) {
-        perror("Envoi message impossible");
-    }
+    // if (send(socket_client, exit_msg, 4, 0) < 0) {
+    //     perror("Envoi message impossible");
+    // }
     shutdown(socket_client, 0);
     close(socket_client);
     pthread_join(recv_thread, NULL);
@@ -175,17 +175,19 @@ void handle_signal(int signal) {
 
 static void send_msg(GtkWidget *widget, gpointer data) {
     GtkWidget *entry = GTK_WIDGET(data);
-    const char *text = gtk_entry_get_text(GTK_ENTRY(entry));
+    char *text = gtk_entry_get_text(GTK_ENTRY(entry));
+    strcat(text, " \n");
     if (send(socket_client, text, strlen(text), 0) < 0) {
         perror("Envoi message impossible");
     }
     gtk_entry_set_text(GTK_ENTRY(entry), "");
 }
 
-void receive_msg(void) {
+void receive_msg(void* socket_cl) {
+    int socket = *(int*)socket_cl;
     char buffer_msg[BUFFER_SIZE];
     while (off_app == 0) {
-        int nb_char = recv(socket_client, buffer_msg, BUFFER_SIZE - 1, 0);
+        int nb_char = recv(socket, buffer_msg, sizeof(buffer_msg) - 1, 0);
         if (nb_char <= 0) { break; }
         buffer_msg[nb_char] = '\0';
         char *message = g_strdup(buffer_msg);
