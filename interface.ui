@@ -16,6 +16,7 @@
               <object class="GtkTextView" id="text_view">
                 <property name="editable">False</property>
                 <property name="visible">True</property>
+                <property name="cursor-visible">False</property>
               </object>
             </child>
           </object>

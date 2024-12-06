@@ -156,7 +156,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    shut_down();
+    close(socket_server);
+    printf("[INFO] Arrêt du serveur\n");
     return EXIT_SUCCESS;
 }
 
@@ -178,8 +179,8 @@ void send_acquit(int *socket) {
 void shut_down(void) {
     off_server = 1;
     // Gérer l'envoi d'un message aux clients
+    printf("\n");
     close(socket_server);
-    printf("[INFO] Arrêt du serveur\n");
 }
 
 void get_time(void) {
@@ -256,7 +257,7 @@ void handle_client(void *socket_desc) {
 
     printf("[INFO] client %d connecté\n", client_id);
     snprintf(buffer, sizeof(buffer), "Bienvenue sur WeeChat !\n\n");
-    send(client_socket, buffer, strlen(buffer) + 1, 0);
+    send(client_socket, buffer, strlen(buffer), 0);
     send_history(client_id);
 
     while (1) {
@@ -306,7 +307,6 @@ void send_history(int client_id) {
     FILE* file = fopen(channel_name, "r");
 
     if (file != NULL) {
-        printf("envoi history\n");
         char line[buffer_size];
         while (fgets(line, sizeof(line), file) != NULL) {
             send(socket_val, line, strlen(line), 0);
@@ -321,38 +321,3 @@ void add_date_msg(char* buffer, const char* msg) {
     snprintf(buffer, 75, "%d-%02d-%02d %02d:%02d:%02d : ", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
     strcat(buffer, msg);
 }
-
-
-/*void handle_client(void *socket_client) {
-    int socket = *(int*)socket_client;
-
-    char *buffer = (char*)malloc((BUFFER_LIMIT)*sizeof(char));
-    if (buffer == NULL) {
-        perror("[ERROR] Allocation buffer impossible\n");
-        printf("[MSG] Session client fermee\n");
-        close(socket);
-        pthread_exit(NULL);
-    }
-
-    while(1) {
-        int nb_char = recv(socket, buffer, BUFFER_LIMIT -1, 0);
-        if (nb_char <= 0) {
-            perror("[ERROR] Lecture message client impossible\n");
-            break;
-        }
-        buffer[nb_char] = '\0';
-
-        if (strcmp(buffer, "EXT") == 0) { break; }
-        printf("[MSG] Message de %p : %s\n", (void*)&socket, buffer);
-        if (send(socket, buffer, sizeof(buffer) -1, 0) < 0) {
-            perror("[ERROR] Envoi message impossible\n");
-            break;
-        }
-        memset(buffer, 0, BUFFER_LIMIT);
-    }
-
-    printf("[MSG] Session client fermee\n");
-    free(buffer);
-    close(socket);
-    pthread_exit(NULL);
-}*/
