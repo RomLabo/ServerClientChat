@@ -8,7 +8,7 @@ C'est une application graphique utilisant la librairie GTK 3.0
 
 pour compiler l'application client utilisant la librairie GTK 
 ##
-        gcc `pkg-config --cflags gtk+-3.0` -o client client.c `pkg-config --libs gtk+-3.0`
+        gcc -o hello_world $(pkg-config --cflags --libs gtk+-3.0) hello_world.c
 
 pour compiler l'application server
 ##
