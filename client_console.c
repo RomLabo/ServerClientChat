@@ -45,7 +45,7 @@ enum error_type {
     Variables
 */
 
-int socket_client;
+int main_socket;
 int off_client = 0;
 int off_recv = 0;
 int off_send = 0;
@@ -64,6 +64,8 @@ void msg_default_config(void);
 void msg_port_missing(void);
 void msg_too_much(void);
 
+void connect_on_channel(const char* ip, int port);
+
 /*
     Tableau de pointeurs sur fonction affichage
 */
@@ -78,10 +80,8 @@ void (*show_msg[3])(void) = {
 
 int main(int argc, char *argv[]) {
     char buffer[buffer_size];
-    pthread_t thread_id;
-    pthread_attr_t attr;
     struct sigaction action;
-    struct sockaddr_in addr_server;
+    struct sockaddr_in main_addr_server;
     
     printf("\nClient TCP \n");
 
@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Configuration de l'adresse du serveur */
-    setup_addr(argc, argv, &addr_server);
+    setup_addr(argc, argv, &main_addr_server);
 
     /* Gestion des signaux */
     action.sa_handler = &handle_signal;
@@ -102,14 +102,14 @@ int main(int argc, char *argv[]) {
     }
 
     /* Création socket client */
-    if ((socket_client = socket(sock_domain, sock_type, sock_protocol)) == -1) {
+    if ((main_socket = socket(sock_domain, sock_type, sock_protocol)) == -1) {
         perror("  Création du socket impossible\n");
         return ERR_CREATE_SOCKET;
     }
 
     /* Création de la connection */
-    if (connect(socket_client, (struct sockaddr*)&addr_server,sizeof(addr_server)) == -1) {
-        close(socket_client);
+    if (connect(main_socket, (struct sockaddr*)&main_addr_server,sizeof(main_addr_server)) == -1) {
+        close(main_socket);
         perror("  Connexion au serveur impossible\n");
         return ERR_CONNECT_SERVER;
     }
@@ -117,25 +117,67 @@ int main(int argc, char *argv[]) {
     /* Attente de l'acquittement connection */
     wait_acquit();
 
-    /* Créatiion d'un thread pour la réception des message
-       afin de ne pas bloquer l'envoi de message */
-    pthread_attr_init(&attr);
-    pthread_create(&thread_id, &attr,(void*)receive_msg, &socket_client);
+    char acquit_msg[4];
+    snprintf(acquit_msg, sizeof(acquit_msg), "ACK");
+    send(main_socket, acquit_msg, strlen(acquit_msg) + 1, 0);
 
-    /* Boucle principale pour la gestion de l'envoi des messages. */
-    while (off_send == 0) {
-        if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
-            printf("\033[A\33[2K\r");
-            send(socket_client, buffer, strlen(buffer) + 1, 0);
-        } 
+    if (recv(main_socket, buffer, sizeof(buffer), 0) > 0) {
+        printf("%s", buffer);
     }
 
-    printf("  Arrêt envoi message\n");
-    pthread_join(thread_id, NULL);
+    printf("Saisir votre choix : ");
+    fgets(buffer, sizeof(buffer), stdin);
+    send(main_socket, buffer, strlen(buffer) + 1, 0);
+
+    int nb_bytes = recv(main_socket, buffer, sizeof(buffer) - 1, 0);
+    if (nb_bytes <= 0) {
+        printf("Erreur: Le serveur ne répond pas\n");
+        close(main_socket);
+        // Mettre en place un code erreur
+        return -1;
+    }
+    buffer[nb_bytes] = '\0';
+
+    if (strcmp(buffer, "Saisir le nom du channel :") == 0) {
+        printf("Saisir le nom du channel : ");
+        fgets(buffer, sizeof(buffer), stdin);
+        buffer[strlen(buffer) - 1] = '\0';
+        send(main_socket, buffer, strlen(buffer) + 1, 0);
+
+        char buff[buffer_size];
+        printf("buff :%s:\n", buff);
+        sleep(1);
+
+        int nb_byt = recv(main_socket, buff, sizeof(buff), 0);
+        if (nb_byt <= 0) {
+            printf("Erreur: Le serveur ne répond pas\n");
+            close(main_socket);
+            // Mettre en place un code erreur
+            return -1;
+        }
+        buff[nb_byt] = '\0';
+        printf("nb char: %d\n", nb_byt);
+        printf("response :%s:\n", buff);
+        
+        sleep(1);
+        char channel_ip[50];
+        int channel_port; 
+        sscanf(buff, "%[^:]:%d", channel_ip, &channel_port);
+
+        //sleep(1);
+        printf("Vous êtes connecté sur %s:%d\n", channel_ip, channel_port);
+        connect_on_channel(channel_ip, channel_port);
+    } else {
+        char channel_ip[50];
+        int channel_port; 
+        sscanf(buffer, "%[^:]:%d", channel_ip, &channel_port);
+
+        printf("Vous êtes connecté sur %s:%d\n", channel_ip, channel_port);
+        connect_on_channel(channel_ip, channel_port);
+    }
 
     /* Fermeture de la connexion */
-    close(socket_client);
-
+    close(main_socket);
     return EXIT_SUCCESS;
 }
 
@@ -163,8 +205,8 @@ void setup_addr(int argc, char *argv[], struct sockaddr_in *addr) {
 void wait_acquit(void) {
     char acquit_msg[4];
     while (strcmp(acquit_msg, "ACK") != 0) {
-        if (read(socket_client, &acquit_msg, 4) < 0) {
-            close(socket_client);
+        if (read(main_socket, &acquit_msg, 4) < 0) {
+            close(main_socket);
             perror("  Lecture acquittement impossible\n");
             exit(ERR_READ_ACK);
         }
@@ -198,7 +240,7 @@ void handle_signal(int signal) {
 void shut_down(void) {
     off_recv = 1;
     off_send = 1;
-    shutdown(socket_client, 2);
+    shutdown(main_socket, 2);
     printf("\n  Arrêt de l'application en cours ...\n");
 }
 
@@ -225,4 +267,48 @@ void msg_too_much(void) {
     printf("\n  Les paramètres à renseigner sont : \n");
     printf("    1) adresse ip serveur\n");
     printf("    2) port du serveur\n\n");
+}
+
+void connect_on_channel(const char* ip, int port) {
+    int channel_socket;
+    struct sockaddr_in channel_addr;
+    char buffer[buffer_size];
+    pthread_t receive_thread;
+
+    channel_socket = socket(sock_domain, sock_type, 0);
+    if (channel_socket < 0) {
+        perror("Une erreur réseau est survenue\n");
+        exit(EXIT_FAILURE);
+    }
+
+    channel_addr.sin_family = sock_domain;
+    channel_addr.sin_addr.s_addr = inet_addr(ip);
+    channel_addr.sin_port = htons(port);
+
+    if (connect(channel_socket, (struct sockaddr*)&channel_addr, sizeof(channel_addr)) < 0) {
+        perror("Connexion au channel échouée\n");
+        close(channel_socket);
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Vous êtes connecté sur %s:%d\n", ip, port);
+
+    pthread_create(&receive_thread, NULL, (void*)receive_msg, &channel_socket);
+
+    while (off_send == 0) {
+        fgets(buffer, sizeof(buffer), stdin);
+        if (strcmp(buffer, "/quitter\n") == 0) {
+            printf("Déconnexion du channel en cours..\n");
+            break;
+        }
+
+        printf("\033[A\33[2K\r");
+        if (off_send == 0) {
+            send(channel_socket, buffer, strlen(buffer) + 1, 0);
+        }
+    }
+
+    pthread_cancel(receive_thread);
+    shutdown(channel_socket, 2);
+    close(channel_socket);
 }
