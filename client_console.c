@@ -29,7 +29,7 @@ const int sock_protocol = 0;
 
 const int port = 8080;
 const char addr_inet[10] = "127.0.0.1";
-const int buffer_size = 1024;
+const int buffer_size = 512;
 
 enum msg_config { 
     DEFAULT, PORT_MISSING, TOO_MUCH 
@@ -127,9 +127,9 @@ int main(int argc, char *argv[]) {
 
     printf("Saisir votre choix : ");
     fgets(buffer, sizeof(buffer), stdin);
-    send(main_socket, buffer, strlen(buffer) + 1, 0);
+    write(main_socket, buffer, strlen(buffer) + 1);
 
-    int nb_bytes = recv(main_socket, buffer, sizeof(buffer) - 1, 0);
+    int nb_bytes = read(main_socket, buffer, sizeof(buffer));
     if (nb_bytes <= 0) {
         printf("Erreur: Le serveur ne répond pas\n");
         close(main_socket);
@@ -142,39 +142,28 @@ int main(int argc, char *argv[]) {
         printf("Saisir le nom du channel : ");
         fgets(buffer, sizeof(buffer), stdin);
         buffer[strlen(buffer) - 1] = '\0';
-        send(main_socket, buffer, strlen(buffer) + 1, 0);
+        if (write(main_socket, buffer, strlen(buffer) + 1) < 0) { 
+            printf("Erreur: Impossible de transmettre le nom du channel\n");
+            close(main_socket);
+            return -1;
+        }
 
-        char buff[buffer_size];
-        printf("buff :%s:\n", buff);
-        sleep(1);
-
-        int nb_byt = recv(main_socket, buff, sizeof(buff), 0);
+        int nb_byt = read(main_socket, buffer, sizeof(buffer));
         if (nb_byt <= 0) {
             printf("Erreur: Le serveur ne répond pas\n");
             close(main_socket);
             // Mettre en place un code erreur
             return -1;
         }
-        buff[nb_byt] = '\0';
+        buffer[nb_byt] = '\0';
         printf("nb char: %d\n", nb_byt);
-        printf("response :%s:\n", buff);
-        
-        sleep(1);
-        char channel_ip[50];
-        int channel_port; 
-        sscanf(buff, "%[^:]:%d", channel_ip, &channel_port);
-
-        //sleep(1);
-        printf("Vous êtes connecté sur %s:%d\n", channel_ip, channel_port);
-        connect_on_channel(channel_ip, channel_port);
-    } else {
-        char channel_ip[50];
-        int channel_port; 
-        sscanf(buffer, "%[^:]:%d", channel_ip, &channel_port);
-
-        printf("Vous êtes connecté sur %s:%d\n", channel_ip, channel_port);
-        connect_on_channel(channel_ip, channel_port);
+        printf("response :%s:\n", buffer);
     }
+
+    char channel_ip[50];
+    int channel_port; 
+    sscanf(buffer, "%[^:]:%d", channel_ip, &channel_port);
+    connect_on_channel(channel_ip, channel_port);
 
     /* Fermeture de la connexion */
     close(main_socket);
@@ -217,11 +206,12 @@ void wait_acquit(void) {
 
 void receive_msg(void* socket_desc) {
     int socket = *(int*)socket_desc;
-    char buffer[buffer_size];
+    char buffer[400];
 
     while (off_recv == 0) {
-        int bytes_received = recv(socket, buffer, sizeof(buffer) - 1, 0);
+        int bytes_received = read(socket, buffer, sizeof(buffer));
         if (bytes_received <= 0 && off_recv == 0) {
+            off_recv = 1;
             printf("  Lecture des messages impossible\n");
             break;
         }
@@ -238,9 +228,10 @@ void handle_signal(int signal) {
 }
 
 void shut_down(void) {
+    shutdown(main_socket, 2);
+    close(main_socket);
     off_recv = 1;
     off_send = 1;
-    shutdown(main_socket, 2);
     printf("\n  Arrêt de l'application en cours ...\n");
 }
 
@@ -291,6 +282,8 @@ void connect_on_channel(const char* ip, int port) {
         exit(EXIT_FAILURE);
     }
 
+    size_t msg_size = 0;
+
     printf("Vous êtes connecté sur %s:%d\n", ip, port);
 
     pthread_create(&receive_thread, NULL, (void*)receive_msg, &channel_socket);
@@ -298,13 +291,21 @@ void connect_on_channel(const char* ip, int port) {
     while (off_send == 0) {
         fgets(buffer, sizeof(buffer), stdin);
         if (strcmp(buffer, "/quitter\n") == 0) {
+            off_send = 1;
+            off_recv = 1;
             printf("Déconnexion du channel en cours..\n");
             break;
         }
 
         printf("\033[A\33[2K\r");
         if (off_send == 0) {
-            send(channel_socket, buffer, strlen(buffer) + 1, 0);
+            msg_size = strlen(buffer) + 1;
+            write(channel_socket, &msg_size, sizeof(size_t));
+
+            if (write(channel_socket, buffer, strlen(buffer) + 1) < 0) {
+                printf("Envoi du message impossible\n");
+                continue;
+            }
         }
     }
 

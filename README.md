@@ -1,6 +1,6 @@
-# WeeChat 
+# ServerClientChat 
 
-WeeChat est une application de chat client/serveur en C permettant
+ServerClientChat est une application de chat client/serveur en C permettant
 d'échanger des messages entre plusieurs utilisateurs ou à destination
 des utilisateurs connectés au serveur. 
 
@@ -8,7 +8,11 @@ C'est une application graphique utilisant la librairie GTK 3.0
 
 pour compiler l'application client utilisant la librairie GTK 
 ##
-        gcc -o hello_world $(pkg-config --cflags --libs gtk+-3.0) hello_world.c
+        gcc client_gtk.c -o client $(pkg-config --cflags --libs gtk+-3.0)
+
+pour compiler l'application client console 
+##
+        gcc client_console.c -o client -Wall
 
 pour compiler l'application server
 ##
