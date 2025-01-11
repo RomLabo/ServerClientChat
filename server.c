@@ -406,7 +406,8 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            /*char buffer_create[buffer_size];
+            /* Gestion création nouveau channel */
+            char buffer_create[buffer_size];
             nb_bytes = read((*new_client_socket), buffer_create, sizeof(buffer_create));
             if (nb_bytes <= 0) { 
                 perror("[ERROR] Réception nom du channel impossible\n");
@@ -455,7 +456,7 @@ int main(int argc, char *argv[]) {
             } else { perror("[ERROR] Démarrage des channels impossible\n"); }
             
             close((*new_client_socket));
-            free(new_client_socket);*/
+            free(new_client_socket);
         }
     }
 
@@ -517,7 +518,7 @@ int send_history(Client* client) {
     FILE* file = fopen(path, "r");
 
     if (file != NULL) {
-        while (fgets(line, sizeof(line), file) != NULL) {
+        while (fgets(line, line_history_size -2, file) != NULL) {
             if (write((*client).socket, line, strlen(line) + 1) < 0) {
                 error = ERR_SEND_HISTORY;
                 break;
@@ -536,8 +537,7 @@ void add_date_msg(char* buffer_msg_date, char* buffer_msg, size_t size_msg_date)
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
     snprintf(buffer_msg_date, size_msg_date, "[%d-%02d-%02d %02d:%02d:%02d] %s", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, buffer_msg);
-    //strcat(buffer_msg_date, buffer_msg);
-    buffer_msg_date[size_msg_date] = '\0';
+    //buffer_msg_date[size_msg_date] = '\0';
 }
 
 int save_msg(const char* channel_name, const char* msg) {
@@ -588,6 +588,8 @@ int add_client(int** all_clients, int socket) {
 
 int remove_client(int** all_clients, Client* client) {
     int i = 0;
+
+    pthread_mutex_lock(&clients_mutex);
     while (i < clients_count) {
         if ((*all_clients)[i] == (*client).socket) {
             clients_count --;
@@ -606,6 +608,7 @@ int remove_client(int** all_clients, Client* client) {
             else { clients_curr_size = new_size; }
         }
     }
+    pthread_mutex_unlock(&clients_mutex);
 
     return 0;
 }
@@ -631,7 +634,7 @@ void handle_client(void* client) {
 
     while (nb_bytes > 0 && off_server == 0) {
         if (read((*client_ptr).socket, &msg_size, sizeof(size_t)) <= 0) {
-            continue;
+            break;
         } 
 
         msg_date_size = msg_size + date_size;
@@ -640,7 +643,7 @@ void handle_client(void* client) {
         char* msg_with_date = (char*)malloc(sizeof(char) * msg_date_size);
         if (msg == NULL || msg_with_date == NULL) {
             perror("[ERROR] Allocation message client impossible\n");
-            continue;
+            break;
         }
 
         nb_bytes = read((*client_ptr).socket, msg, sizeof(char) * msg_size);
@@ -656,15 +659,12 @@ void handle_client(void* client) {
         free(msg_with_date);
     }
 
-    pthread_mutex_lock(&clients_mutex);
-
     if (remove_client(&clients, client_ptr) < 0) {
         perror("[ERROR] Réduction stockage clients impossible\n");
     }
 
     close((*client_ptr).socket);
     free(client_ptr);
-    pthread_mutex_unlock(&clients_mutex);
 
     printf("[INFO] Client déconnecté\n");
     pthread_exit(NULL);

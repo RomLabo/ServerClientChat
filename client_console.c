@@ -49,6 +49,7 @@ int main_socket;
 int off_client = 0;
 int off_recv = 0;
 int off_send = 0;
+int nb_bytes = 0;
 
 /*
     Déclaration des fonctions
@@ -121,7 +122,8 @@ int main(int argc, char *argv[]) {
     snprintf(acquit_msg, sizeof(acquit_msg), "ACK");
     send(main_socket, acquit_msg, strlen(acquit_msg) + 1, 0);
 
-    if (recv(main_socket, buffer, sizeof(buffer), 0) > 0) {
+    nb_bytes = read(main_socket, buffer, sizeof(buffer));
+    if (nb_bytes > 0) {
         printf("%s", buffer);
     }
 
@@ -129,7 +131,7 @@ int main(int argc, char *argv[]) {
     fgets(buffer, sizeof(buffer), stdin);
     write(main_socket, buffer, strlen(buffer) + 1);
 
-    int nb_bytes = read(main_socket, buffer, sizeof(buffer));
+    nb_bytes = read(main_socket, buffer, sizeof(buffer));
     if (nb_bytes <= 0) {
         printf("Erreur: Le serveur ne répond pas\n");
         close(main_socket);
@@ -207,17 +209,21 @@ void wait_acquit(void) {
 
 void receive_msg(void* socket_desc) {
     int socket = *(int*)socket_desc;
-    char buffer[400];
+    char* buffer = malloc((1025) * sizeof(char)); 
 
-    while (off_recv == 0) {
-        int bytes_received = read(socket, buffer, sizeof(buffer));
-        if (bytes_received <= 0 && off_recv == 0) {
-            off_recv = 1;
-            printf("  Lecture des messages impossible\n");
-            break;
+    if (buffer != NULL) {
+        while((nb_bytes = recv(socket, buffer, 1024, 0)) > 0) {
+            if (off_recv == 1) { break; }
+            if(nb_bytes <= 0) {
+                printf("  Lecture des messages impossible\n"); 
+                break; 
+            } else {
+                buffer[nb_bytes] = '\0';                     
+                printf("%s", buffer);
+            }
         }
-        buffer[bytes_received] = '\0';
-        printf("%s", buffer);
+
+        free(buffer);
     }
 
     printf("  Arrêt reception message\n");
@@ -286,6 +292,7 @@ void connect_on_channel(const char* ip, int port) {
     size_t msg_size = 0;
 
     printf("Vous êtes connecté sur %s:%d\n", ip, port);
+    printf("Pour quitter saisir /quitter\n");
 
     pthread_create(&receive_thread, NULL, (void*)receive_msg, &channel_socket);
 
