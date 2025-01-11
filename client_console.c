@@ -163,10 +163,11 @@ int main(int argc, char *argv[]) {
     char channel_ip[50];
     int channel_port; 
     sscanf(buffer, "%[^:]:%d", channel_ip, &channel_port);
-    connect_on_channel(channel_ip, channel_port);
-
     /* Fermeture de la connexion */
     close(main_socket);
+    connect_on_channel(channel_ip, channel_port);
+
+    
     return EXIT_SUCCESS;
 }
 

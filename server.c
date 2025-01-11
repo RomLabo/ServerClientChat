@@ -37,7 +37,8 @@ const int max_channels = 10;
 const char acquit_msg[8] = "SYN-ACK";
 const char exit_msg[4] = "EXT";
 const int path_history_size = 140;
-const int line_history_size = 768;
+const int line_history_size = 264;
+const int date_size = 100;
 
 // Paramètres stockage clients
 const int clients_min_size = 6;
@@ -45,23 +46,22 @@ const int clients_gap_size = 4;
 
 // Code erreur de l'application
 enum error_type {
-    ERR_TOO_MUCH_ARG = -20, 
-    ERR_CREATE_SOCKET,
-    ERR_BIND_SOCKET, 
-    ERR_LISTEN_SOCKET,
-    ERR_CONNECT_SERVER, 
-    ERR_READ_ACK, 
-    ERR_HANDLE_SIG, 
-    ERR_READ_CHANNELS,
-    ERR_CLIENTS_STORAGE,
-    ERR_ADD_CLIENT, 
-    ERR_MAX_CHANNELS,
-    ERR_CREATE_CHANNEL_SOCKET, 
-    ERR_BIND_CHANNEL_SOCKET,
-    ERR_LISTEN_CHANNEL_SOCKET, 
-    ERR_SEND_HISTORY,
-    ERR_READ_HISTORY,
-    ERR_WRITE_HISTORY
+    ERR_TOO_MUCH_ARG = -20,    // Trop d'arguments passés lors du lancement de l'application
+    ERR_CREATE_SOCKET,         // Problème lors de la création du socket
+    ERR_BIND_SOCKET,           // Problème lors l'assignation du socket à une adresse
+    ERR_LISTEN_SOCKET,         // Problème lors de l'écoute du socket
+    ERR_READ_ACK,              // Problème lors de la lecture de l'acquittement
+    ERR_HANDLE_SIG,            // Problème lors de l'appel à la fonction sigaction
+    ERR_READ_CHANNELS,         // Problème pour lire les noms des channels (channels.txt)
+    ERR_CLIENTS_STORAGE,       // Problème lors de l'allocation pour le stockage des utilisateurs
+    ERR_ADD_CLIENT,            // Problème lors de l'ajout d'un nouveau utilisateur
+    ERR_MAX_CHANNELS,          // Nombre de channels maximum atteint
+    ERR_CREATE_CHANNEL_SOCKET, // Problème lors de la création du socket pour un channel
+    ERR_BIND_CHANNEL_SOCKET,   // Problème lors de l'assignation du socket channel à une adresse
+    ERR_LISTEN_CHANNEL_SOCKET, // Problème lors de l'écoute du socket d'un channel
+    ERR_SEND_HISTORY,          // Problème lors de l'envoi des messages de l'historique
+    ERR_READ_HISTORY,          // Problème lors da lecture des messages de l'historique
+    ERR_WRITE_HISTORY          // Problème lors de l'ajout d'un message dans l'historique
 };
 
 /*
@@ -70,10 +70,6 @@ enum error_type {
 
 int main_socket;
 int off_server = 0;
-time_t current_time;
-struct tm * m_time; 
-int id_clients = 0;
-
 int clients_curr_size = 6;
 int* clients = NULL;
 int clients_count = 0;
@@ -96,23 +92,132 @@ typedef struct {
     Déclaration des fonctions
 */
 
+/**
+ * Cette fonction permet de configurer l'adresse
+ * du socket du serveur principal (main_socket).
+ *
+ * argc : nombre d'arguments 
+ * argv : les valeurs des arguments
+ * addr : adresse du socket
+ */
 void setup_addr(int argc, char *argv[], struct sockaddr_in *addr);
+
+/**
+ * Cette fonction permet de récupérer le signal 
+ * envoyé au processus pour ensuite appeler 
+ * les fonctions adéquates.
+ * 
+ * sig : numéro du signal  
+ */
 void handle_signal(int sig);
 
+/**
+ * Cette fonction permet d'envoyer l'historique 
+ * des messages d'un channel à un client.
+ *
+ * client : pointeur de type Client
+ */
 int send_history(Client* client);
+
+/**
+ * Cette fonction permet de dater le message
+ * qu'un utilisateur souhaite envoyer dans le channel.
+ * 
+ * buffer_msg_date : le buffer qui contiendra le message daté
+ * buffer_msg : le buffer contenant le message de l'utilisateur
+ * size_msg_date : la taille alloué pour le buffer
+ */
 void add_date_msg(char* buffer_msg_date, char* buffer_msg, size_t size_msg_date);
+
+/**
+ * Cette fonction permet de sauvegarder le message
+ * de l'utilisateur dans une fichier qui représente l'historique 
+ * des messages du channel.
+ * 
+ * channel_name : nom du channel 
+ * msg : message de l'utilisateur à sauvegarder
+ */
 int save_msg(const char* channel_name, const char* msg);
+
+/**
+ * Cette fonction permet de diffuser le message envoyé
+ * par un utilisateur à tout les utilisateurs connectés
+ * au channel.
+ * 
+ * msg : message de l'utilisateur à diffuser
+ */
 void broadcast_msg(const char* msg);
 
+/**
+ * Cette fonction permet de supprimer un utilisateur
+ * du tableau des stockage des utilisateurs et si besoin
+ * reduit la taille alloué pour ce tableau.
+ * 
+ * all_clients : pointeur vers le pointeur du tableau d'utilisateurs
+ * client : pointeur de l'utilisateur à supprimer
+ */
 int remove_client(int** all_clients, Client* client);
+
+/**
+ * Cette fonction permet d'ajouter un utilisateur dans
+ * le tableau de sotckahe des utilisateurs et si besoin
+ * augmente la taille alloué pour ce tableau.
+ * 
+ * all_clients : pointeur vers le pointeur du tableau d'utilisateurs
+ * client : pointeur de l'utilisateur à ajouter
+ */
 int add_client(int** all_clients, int socket);
 
+/**
+ * Cette fonction permet d'ajouter un nouveau channel
+ * dans le tableau de stockage des channels, puis 
+ * configure le channel en lui affectant l'ip, le nom et
+ * le port passés en paramètres. 
+ * ( Sauf si le nombre de channels maximum a été atteint .)
+ * 
+ * channels : le tableau de stockage des channels
+ * count : le nombre de channels stockés
+ * ip : l'adresse ip pour se connecter au channel
+ * name : le nom du channel à ajouter
+ * port : le port du channel
+ */
 int add_channel(Channel channels[], int* count, const char* ip, const char* name, int port);
 
+/**
+ * Cette fonction permet de gérer un utilisateur qui vient
+ * de se connecter au channel, en réceptionnant les messages
+ * envoyés puis les sauvegarder et les diffuser au autres 
+ * utilisateurs du channel.
+ * 
+ * client_socket : le socket de l'utilisateur à gérer
+ */
 void handle_client(void* client_socket);
+
+/**
+ * Cette fonction permet de démarrer un channel, en configurant
+ * son socket, le mettre en écoute afin qu'il gère les connections
+ * des utilisateurs.
+ * 
+ * name : le nom du channel 
+ * ip : l'adresse ip du channel
+ * port : le port sur lequel le channel acceptera les connecitons
+ */
 void start_channel(const char* name, const char* ip, int port);
 
+/**
+ * Cette fonction permet d'envoyer un message d'acquittement
+ * au socket passé en paramètre.
+ * 
+ * socket : le socket sur lequel envoyé l'acquittement
+ */
 void send_acquit(int* socket);
+
+/**
+ * Cette fonction permet d'attendre un message d'acquittement
+ * reçu sur le socket passé en paramètre.
+ * 
+ * socket : le socket sur lequel attendre l'acquittement
+ */
 void wait_acquit(int* socket);
 
 /*
@@ -133,6 +238,7 @@ int main(int argc, char *argv[]) {
     
     printf("[INFO] Démarrage du serveur\n");
 
+    /* Control du nombre d'arguments passé au programme. */
     if (argc > 3) {
         printf("[ERROR] Trop d arguments renseignés \n");
         printf("[INFO] Arrêt du serveur\n");
@@ -149,24 +255,28 @@ int main(int argc, char *argv[]) {
         return ERR_HANDLE_SIG;
     }
 
+    /* Création du socket serveur principal */
     main_socket = socket(sock_domain, sock_type, sock_protocol);
     if (main_socket < 0) {
         perror("[ERROR] Création socket impossible\n");
         return ERR_CREATE_SOCKET;
     }
 
+    /* Liaison du socket principal */
     if (bind(main_socket, (struct sockaddr *)&main_addr_server, sizeof(main_addr_server)) < 0) {
         close(main_socket);
         perror("[ERROR] Liaison socket impossible\n");
         return ERR_BIND_SOCKET;
     }
 
+    /* Mise en écoute des demandes de connection */
     if (listen(main_socket, 5) < 0) {
         close(main_socket);
         perror("[ERROR] Ecoute impossible\n");
         return ERR_LISTEN_SOCKET;
     }
 
+    /* Récupération des noms des channels */
     FILE* file = fopen("data/channels.txt", "r");
     if (file == NULL) {
         close(main_socket);
@@ -177,6 +287,7 @@ int main(int argc, char *argv[]) {
     printf("[INFO] Démarrage ecoute connexion\n");
     printf("[CONFIG] %s:%d\n", addr_inet, port);
 
+    /* Ajoute et démarrage des channels */
     char line[100];
     while (fgets(line, sizeof(line), file)) {
         line[strcspn(line, "\n")] = 0;
@@ -208,6 +319,7 @@ int main(int argc, char *argv[]) {
 
     fclose(file);
 
+    /* Boucle principale du serveur principal */
     while (off_server == 0) {
         int* new_client_socket = (int*)malloc(sizeof(int));
         if (new_client_socket == NULL) {
@@ -274,9 +386,9 @@ int main(int argc, char *argv[]) {
                 strcat(temp_addr, ":");
                 strcat(temp_addr, port_str);
                 snprintf(buffer, sizeof(buffer), "%s\n", temp_addr);
-            } else if (choice == (channels_count + 1)) {
+            } /*else if (choice == (channels_count + 1)) {
                 snprintf(buffer, sizeof(buffer), "Saisir le nom du channel :");
-            } else { 
+            }*/ else { 
                 snprintf(buffer, sizeof(buffer), "Choix invalide\n");
                 choice = -1; 
             }
@@ -294,7 +406,7 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            char buffer_create[buffer_size];
+            /*char buffer_create[buffer_size];
             nb_bytes = read((*new_client_socket), buffer_create, sizeof(buffer_create));
             if (nb_bytes <= 0) { 
                 perror("[ERROR] Réception nom du channel impossible\n");
@@ -343,7 +455,7 @@ int main(int argc, char *argv[]) {
             } else { perror("[ERROR] Démarrage des channels impossible\n"); }
             
             close((*new_client_socket));
-            free(new_client_socket);
+            free(new_client_socket);*/
         }
     }
 
@@ -423,8 +535,8 @@ int send_history(Client* client) {
 void add_date_msg(char* buffer_msg_date, char* buffer_msg, size_t size_msg_date) {
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
-    snprintf(buffer_msg_date, size_msg_date, "%d-%02d-%02d %02d:%02d:%02d : ", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-    strcat(buffer_msg_date, buffer_msg);
+    snprintf(buffer_msg_date, size_msg_date, "[%d-%02d-%02d %02d:%02d:%02d] %s", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, buffer_msg);
+    //strcat(buffer_msg_date, buffer_msg);
     buffer_msg_date[size_msg_date] = '\0';
 }
 
@@ -512,7 +624,6 @@ void handle_client(void* client) {
     int nb_bytes = 1;
     size_t msg_size = 0; 
     size_t msg_date_size = 0; 
-    int date_size = 75;
 
     if (send_history(client_ptr) < 0) {
         perror("[ERROR] Envoi historique impossible\n");
