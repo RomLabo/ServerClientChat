@@ -386,9 +386,9 @@ int main(int argc, char *argv[]) {
                 strcat(temp_addr, ":");
                 strcat(temp_addr, port_str);
                 snprintf(buffer, sizeof(buffer), "%s\n", temp_addr);
-            } /*else if (choice == (channels_count + 1)) {
+            } else if (choice == (channels_count + 1)) {
                 snprintf(buffer, sizeof(buffer), "Saisir le nom du channel :");
-            }*/ else { 
+            } else { 
                 snprintf(buffer, sizeof(buffer), "Choix invalide\n");
                 choice = -1; 
             }
@@ -411,12 +411,16 @@ int main(int argc, char *argv[]) {
             nb_bytes = read((*new_client_socket), buffer_create, sizeof(buffer_create));
             if (nb_bytes <= 0) { 
                 perror("[ERROR] Réception nom du channel impossible\n");
+                close((*new_client_socket));
+                free(new_client_socket);
                 continue;
             }
 
             FILE* file = fopen("data/channels.txt", "a");
             if (file == NULL) {
                 perror("[ERROR] Sauvegarde message impossible\n");
+                close((*new_client_socket));
+                free(new_client_socket);
                 continue;
             } 
 
@@ -426,23 +430,25 @@ int main(int argc, char *argv[]) {
             strncpy(new_channel, buffer_create, sizeof(new_channel));
             snprintf(new_port, sizeof(new_port), ",%d\n", last_port);
             strcat(new_channel, new_port);
-            printf("%s\n", new_channel);
             fprintf(file, "%s", new_channel);
             fclose(file);
 
             if (add_channel(channels, &channels_count, ip_server, buffer_create, last_port) < 0) {
                 printf("[ERROR] Nombre maximal de channels atteint\n");
+                close((*new_client_socket));
+                free(new_client_socket);
                 continue; 
             }
 
             char port_str[6];
             char temp_addr[26];
+            char buffer_ip[36];
             snprintf(port_str, sizeof(port_str), "%d", last_port);
             strncpy(temp_addr, ip_server, sizeof(temp_addr));
             strcat(temp_addr, ":");
             strcat(temp_addr, port_str);
-            snprintf(buffer_create, sizeof(buffer_create), "%s", temp_addr);
-            if (write((*new_client_socket), buffer_create, strlen(buffer_create) +1) < 0) {
+            snprintf(buffer_ip, sizeof(buffer_ip), "%s", temp_addr);
+            if (write((*new_client_socket), buffer_ip, strlen(buffer_ip) +1) < 0) {
                 perror("[ERROR] Envoi info nouveau channel impossible\n"); 
             }
 
@@ -454,7 +460,7 @@ int main(int argc, char *argv[]) {
                 child_pids[child_count] = pid;
                 child_count ++;              
             } else { perror("[ERROR] Démarrage des channels impossible\n"); }
-            
+
             close((*new_client_socket));
             free(new_client_socket);
         }
@@ -516,6 +522,8 @@ int send_history(Client* client) {
     snprintf(path, sizeof(char) * path_history_size, "data/%s", (*client).channel_name);
     strcat(path, "_h.txt");
     FILE* file = fopen(path, "r");
+
+    if (file == NULL) { file = fopen(path, "w+"); }
 
     if (file != NULL) {
         while (fgets(line, line_history_size -2, file) != NULL) {

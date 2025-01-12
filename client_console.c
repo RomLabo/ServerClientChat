@@ -46,6 +46,7 @@ enum error_type {
 */
 
 int main_socket;
+int channel_socket;
 int off_client = 0;
 int off_recv = 0;
 int off_send = 0;
@@ -158,14 +159,13 @@ int main(int argc, char *argv[]) {
             return -1;
         }
         buffer[nb_byt] = '\0';
-        printf("nb char: %d\n", nb_byt);
-        printf("response :%s:\n", buffer);
     }
 
     char channel_ip[50];
     int channel_port; 
     sscanf(buffer, "%[^:]:%d", channel_ip, &channel_port);
     /* Fermeture de la connexion */
+    sleep(1);
     close(main_socket);
     connect_on_channel(channel_ip, channel_port);
 
@@ -235,6 +235,8 @@ void handle_signal(int signal) {
 }
 
 void shut_down(void) {
+    shutdown(channel_socket, 2);
+    close(channel_socket);
     shutdown(main_socket, 2);
     close(main_socket);
     off_recv = 1;
@@ -268,7 +270,6 @@ void msg_too_much(void) {
 }
 
 void connect_on_channel(const char* ip, int port) {
-    int channel_socket;
     struct sockaddr_in channel_addr;
     char buffer[buffer_size];
     pthread_t receive_thread;
