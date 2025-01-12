@@ -39,6 +39,7 @@ const char exit_msg[4] = "EXT";
 const int path_history_size = 140;
 const int line_history_size = 264;
 const int date_size = 100;
+const int info_channel_size = 32;
 
 // Paramètres stockage clients
 const int clients_min_size = 6;
@@ -56,6 +57,7 @@ enum error_type {
     ERR_CLIENTS_STORAGE,       // Problème lors de l'allocation pour le stockage des utilisateurs
     ERR_ADD_CLIENT,            // Problème lors de l'ajout d'un nouveau utilisateur
     ERR_MAX_CHANNELS,          // Nombre de channels maximum atteint
+    ERR_CREATE_CHANNEL,        // Problème lors de la création d'un nouveau channel
     ERR_CREATE_CHANNEL_SOCKET, // Problème lors de la création du socket pour un channel
     ERR_BIND_CHANNEL_SOCKET,   // Problème lors de l'assignation du socket channel à une adresse
     ERR_LISTEN_CHANNEL_SOCKET, // Problème lors de l'écoute du socket d'un channel
@@ -149,6 +151,16 @@ int save_msg(const char* channel_name, const char* msg);
 void broadcast_msg(const char* msg);
 
 /**
+ * Cette fonction permet d'ajouter un utilisateur dans
+ * le tableau de sotckahe des utilisateurs et si besoin
+ * augmente la taille alloué pour ce tableau.
+ * 
+ * all_clients : pointeur vers le pointeur du tableau d'utilisateurs
+ * client : pointeur de l'utilisateur à ajouter
+ */
+int add_client(int** all_clients, int socket);
+
+/**
  * Cette fonction permet de supprimer un utilisateur
  * du tableau des stockage des utilisateurs et si besoin
  * reduit la taille alloué pour ce tableau.
@@ -159,14 +171,8 @@ void broadcast_msg(const char* msg);
 int remove_client(int** all_clients, Client* client);
 
 /**
- * Cette fonction permet d'ajouter un utilisateur dans
- * le tableau de sotckahe des utilisateurs et si besoin
- * augmente la taille alloué pour ce tableau.
- * 
- * all_clients : pointeur vers le pointeur du tableau d'utilisateurs
- * client : pointeur de l'utilisateur à ajouter
  */
-int add_client(int** all_clients, int socket);
+int create_channel(char* channel_name, char* channel_info, const char* ip, int port);
 
 /**
  * Cette fonction permet d'ajouter un nouveau channel
@@ -408,6 +414,9 @@ int main(int argc, char *argv[]) {
 
             /* Gestion création nouveau channel */
             char buffer_create[buffer_size];
+            char buffer_ip[info_channel_size];
+
+            /* Réception du nom du channel */
             nb_bytes = read((*new_client_socket), buffer_create, sizeof(buffer_create));
             if (nb_bytes <= 0) { 
                 perror("[ERROR] Réception nom du channel impossible\n");
@@ -416,38 +425,24 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            FILE* file = fopen("data/channels.txt", "a");
-            if (file == NULL) {
-                perror("[ERROR] Sauvegarde message impossible\n");
+            /* Création du nouveau channel et récupération ip et port */
+            if (create_channel(buffer_create, buffer_ip, ip_server, last_port) < 0) {
                 close((*new_client_socket));
                 free(new_client_socket);
                 continue;
-            } 
+            }
 
-            char new_channel[buffer_size];
-            char new_port[8];
-            buffer_create[nb_bytes] = '\0';
-            strncpy(new_channel, buffer_create, sizeof(new_channel));
-            snprintf(new_port, sizeof(new_port), ",%d\n", last_port);
-            strcat(new_channel, new_port);
-            fprintf(file, "%s", new_channel);
-            fclose(file);
-
+            /* Ajout du nouveau channel */
             if (add_channel(channels, &channels_count, ip_server, buffer_create, last_port) < 0) {
                 printf("[ERROR] Nombre maximal de channels atteint\n");
                 close((*new_client_socket));
                 free(new_client_socket);
-                continue; 
+                continue;
             }
 
-            char port_str[6];
-            char temp_addr[26];
-            char buffer_ip[36];
-            snprintf(port_str, sizeof(port_str), "%d", last_port);
-            strncpy(temp_addr, ip_server, sizeof(temp_addr));
-            strcat(temp_addr, ":");
-            strcat(temp_addr, port_str);
-            snprintf(buffer_ip, sizeof(buffer_ip), "%s", temp_addr);
+            printf("info : %s\n", buffer_ip);
+            
+            /* Envoi ip et port nouveau channel */
             if (write((*new_client_socket), buffer_ip, strlen(buffer_ip) +1) < 0) {
                 perror("[ERROR] Envoi info nouveau channel impossible\n"); 
             }
@@ -618,6 +613,20 @@ int remove_client(int** all_clients, Client* client) {
     }
     pthread_mutex_unlock(&clients_mutex);
 
+    return 0;
+}
+
+int create_channel(char* channel_name, char* channel_info, const char* ip, int port) {
+    FILE* file = fopen("data/channels.txt", "a");
+    if (file == NULL) {
+        perror("[ERROR] Création du channel impossible\n");
+        return ERR_CREATE_CHANNEL;
+    } 
+
+    fprintf(file, "%s,%d\n", channel_name, port);
+    fclose(file);
+
+    snprintf(channel_info, info_channel_size -1, "%s:%d", ip, port);
     return 0;
 }
 
