@@ -347,8 +347,16 @@ int main(int argc, char *argv[]) {
             /* Attente acquittement réception du client */
             wait_acquit(new_client_socket);
 
-            char buffer[buffer_size];
-            snprintf(buffer, sizeof(buffer), "Bienvenue sur ServerClientChat !\n Choisissez un channel :\n");
+            //char buffer[buffer_size];
+            char* buffer = (char*)malloc(sizeof(char) * buffer_size);
+            if (buffer == NULL) {
+                perror("[ERROR] Allocation pour reception choix client impossible\n");
+                close((*new_client_socket));
+                free(new_client_socket);
+                continue;
+            }
+
+            snprintf(buffer, buffer_size - 1, "Bienvenue sur ServerClientChat !\n Choisissez un channel :\n");
 
             for (int i = 0; i < channels_count; i++) {
                 char number[20];
@@ -367,6 +375,7 @@ int main(int argc, char *argv[]) {
             if (write((*new_client_socket), buffer, strlen(buffer) + 1) < 0) {
                 perror("[ERROR] Envoi menu impossible\n");
                 close((*new_client_socket));
+                free(buffer);
                 free(new_client_socket);
                 continue;
             }
@@ -376,6 +385,7 @@ int main(int argc, char *argv[]) {
             if (nb_bytes <= 0) {
                 perror("[ERROR] Réception choix channel impossible\n");
                 close((*new_client_socket));
+                free(buffer);
                 free(new_client_socket);
                 continue;
             } 
@@ -391,65 +401,79 @@ int main(int argc, char *argv[]) {
                 strncpy(temp_addr, channels[(choice - 1)].ip, sizeof(temp_addr));
                 strcat(temp_addr, ":");
                 strcat(temp_addr, port_str);
-                snprintf(buffer, sizeof(buffer), "%s\n", temp_addr);
+                snprintf(buffer, buffer_size - 1, "%s\n", temp_addr);
             } else if (choice == (channels_count + 1)) {
-                snprintf(buffer, sizeof(buffer), "Saisir le nom du channel :");
+                snprintf(buffer, buffer_size - 1, "Saisir le nom du channel :");
             } else { 
-                snprintf(buffer, sizeof(buffer), "Choix invalide\n");
+                snprintf(buffer, buffer_size - 1, "Choix invalide\n");
                 choice = -1; 
             }
 
-            if (write((*new_client_socket), buffer, sizeof(buffer)) < 0) {
+            if (write((*new_client_socket), buffer, strlen(buffer) + 1) < 0) {
                 perror("[ERROR] Envoi info channel impossible\n");
                 close((*new_client_socket));
+                free(buffer);
                 free(new_client_socket);
                 continue;
             }
 
             if (choice <= channels_count) {
                 close((*new_client_socket));
+                free(buffer);
                 free(new_client_socket);
                 continue;
             }
 
             /* Gestion création nouveau channel */
-            char buffer_create[buffer_size];
-            char buffer_ip[info_channel_size];
+            char* buffer_ip = (char*)malloc(sizeof(char) * info_channel_size);
+            if (buffer_ip == NULL) { 
+                perror("[ERROR] Allocation pour creation channel impossible\n");
+                close((*new_client_socket));
+                free(buffer);
+                free(new_client_socket);
+                continue;
+            }
 
             /* Réception du nom du channel */
-            nb_bytes = read((*new_client_socket), buffer_create, sizeof(buffer_create));
+            nb_bytes = read((*new_client_socket), buffer, sizeof(buffer));
             if (nb_bytes <= 0) { 
                 perror("[ERROR] Réception nom du channel impossible\n");
                 close((*new_client_socket));
+                free(buffer);
+                free(buffer_ip);
                 free(new_client_socket);
                 continue;
             }
 
             /* Création du nouveau channel et récupération ip et port */
-            if (create_channel(buffer_create, buffer_ip, ip_server, last_port) < 0) {
+            if (create_channel(buffer, buffer_ip, ip_server, last_port) < 0) {
                 close((*new_client_socket));
+                free(buffer);
+                free(buffer_ip);
                 free(new_client_socket);
                 continue;
             }
 
             /* Ajout du nouveau channel */
-            if (add_channel(channels, &channels_count, ip_server, buffer_create, last_port) < 0) {
+            if (add_channel(channels, &channels_count, ip_server, buffer, last_port) < 0) {
                 printf("[ERROR] Nombre maximal de channels atteint\n");
                 close((*new_client_socket));
+                free(buffer);
+                free(buffer_ip);
                 free(new_client_socket);
                 continue;
             }
-
-            printf("info : %s\n", buffer_ip);
             
             /* Envoi ip et port nouveau channel */
             if (write((*new_client_socket), buffer_ip, strlen(buffer_ip) +1) < 0) {
                 perror("[ERROR] Envoi info nouveau channel impossible\n"); 
             }
 
+            free(buffer_ip);
+
             pid_t pid = fork();
             if (pid == 0) {
-                start_channel(buffer_create, ip_server, last_port);
+                start_channel(buffer, ip_server, last_port);
                 exit(0);
             } else if (pid > 0) {
                 child_pids[child_count] = pid;
@@ -457,6 +481,7 @@ int main(int argc, char *argv[]) {
             } else { perror("[ERROR] Démarrage des channels impossible\n"); }
 
             close((*new_client_socket));
+            free(buffer);
             free(new_client_socket);
         }
     }
