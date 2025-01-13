@@ -171,6 +171,12 @@ int add_client(int** all_clients, int socket);
 int remove_client(int** all_clients, Client* client);
 
 /**
+ * Cette fonction permet de créer le channel en écrivant son nom 
+ * et le port associé et construire la chaine (ip:port) qui sera
+ * ensuite envoyé au client.
+ *
+ * channel_name : le nom du channel à créer
+ * channel_info : une chaine dans laquelle sera enrgistré (ip:port) 
  */
 int create_channel(char* channel_name, char* channel_info, const char* ip, int port);
 
@@ -347,7 +353,7 @@ int main(int argc, char *argv[]) {
             /* Attente acquittement réception du client */
             wait_acquit(new_client_socket);
 
-            //char buffer[buffer_size];
+            
             char* buffer = (char*)malloc(sizeof(char) * buffer_size);
             if (buffer == NULL) {
                 perror("[ERROR] Allocation pour reception choix client impossible\n");
@@ -356,8 +362,8 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
+            /* Construction du menu principal */
             snprintf(buffer, buffer_size - 1, "Bienvenue sur ServerClientChat !\n Choisissez un channel :\n");
-
             for (int i = 0; i < channels_count; i++) {
                 char number[20];
                 int choiceNum = i + 1;
@@ -511,9 +517,7 @@ void setup_addr(int argc, char *argv[], struct sockaddr_in *addr) {
 
 void handle_signal(int signal) {
     if (signal == SIGCHLD) {
-        while (waitpid(-1, NULL, WNOHANG) > 0) {
-            // gérer les processus zombie
-        }
+        while (waitpid(-1, NULL, WNOHANG) > 0) { }
     } else if (signal == SIGINT) {
         printf("[INFO] Arrêt serveur principal et channels en cours...\n");
         for (int i = 0; i < child_count; i++) {
@@ -565,7 +569,6 @@ void add_date_msg(char* buffer_msg_date, char* buffer_msg, size_t size_msg_date)
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
     snprintf(buffer_msg_date, size_msg_date, "[%d-%02d-%02d %02d:%02d:%02d] %s", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, buffer_msg);
-    //buffer_msg_date[size_msg_date] = '\0';
 }
 
 int save_msg(const char* channel_name, const char* msg) {
