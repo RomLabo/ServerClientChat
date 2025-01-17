@@ -28,7 +28,6 @@ l'adresse et le port du serveur lors du démarrage de l'application client.
 Pour arrêter l'application serveur : CTRL + C 
 Pour arrêter l'application client : /quitter 
 
-## Points d'améliorations 
-- 
+## Problèmes 
+- L'historique n'est pas correctement envoyé.
 
-En cours de développement...

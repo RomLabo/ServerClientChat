@@ -90,7 +90,7 @@ void send_acquit(void);
  *
  * socket : le socket sur lequel réceptionner les messages
  */
-void receive_msg(void* socket);
+void receive_msg(void* socket_client);
 
 /**
  * Cette fonction permet de récupérer le signal 
@@ -136,6 +136,8 @@ void (*show_msg[3])(void) = {
 int main(int argc, char *argv[]) {
     struct sigaction action;
     struct sockaddr_in main_addr_server;
+    char channel_ip[50];
+    int channel_port; 
     
     printf("\nClient TCP \n");
 
@@ -181,6 +183,7 @@ int main(int argc, char *argv[]) {
     /* Envoi de l'acquittement */
     send_acquit();
 
+    printf("Bienvenue sur ServerClientChat !\n Choisissez un channel :\n");
     /* Réception du menu principal */
     nb_bytes = read(main_socket, buffer, buffer_size);
     if (nb_bytes > 0) {
@@ -204,8 +207,8 @@ int main(int argc, char *argv[]) {
     buffer[nb_bytes] = '\0';
 
     /* Saisi et envoi du nom du channel */
-    if (strcmp(buffer, "Saisir le nom du channel :") == 0) {
-        printf("%s", buffer);
+    if (strcmp(buffer, "$CHANNEL_NAME") == 0) {
+        printf("Saisir le nom du channel : ");
         fgets(buffer, buffer_size, stdin);
         buffer[strlen(buffer) - 1] = '\0';
         if (write(main_socket, buffer, strlen(buffer) + 1) < 0) { 
@@ -222,18 +225,18 @@ int main(int argc, char *argv[]) {
         buffer[nb_byt] = '\0';
     }
 
-    /* Extraction de l'adresse ip et du port du channel */
-    char channel_ip[50];
-    int channel_port; 
-    sscanf(buffer, "%[^:]:%d", channel_ip, &channel_port);
+    if (strcmp(buffer, "$INVALID_CHOICE") == 0) {
+        printf("Choix invalide\n Arrêt de l'application...\n");
+    } else {
+        /* Extraction de l'adresse ip et du port du channel */
+        sscanf(buffer, "%[^:]:%d", channel_ip, &channel_port);
+        sleep(1);
+        connect_on_channel(channel_ip, channel_port);
+    }
 
     /* Fermeture de la connexion avec le serveur principal */
-    sleep(1);
     close(main_socket);
     free(buffer);
-
-    connect_on_channel(channel_ip, channel_port);
-
     return EXIT_SUCCESS;
 }
 
@@ -280,8 +283,8 @@ void send_acquit(void) {
     }
 }
  
-void receive_msg(void* socket) {
-    int socket = *(int*)socket;
+void receive_msg(void* socket_client) {
+    int socket = *(int*)socket_client;
     char* buffer = malloc((buffer_size) * sizeof(char)); 
 
     if (buffer != NULL) {

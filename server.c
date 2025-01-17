@@ -105,6 +105,28 @@ typedef struct {
 void setup_addr(int argc, char *argv[], struct sockaddr_in *addr);
 
 /**
+ * Cette fonction permet de construire le menu
+ * principal en fonction des channels enregistrés
+ *
+ * buffer : le buffer utilisé pour ajouter les infos du menu
+ * channels : le tableau des channels 
+ * count : le nombre totale de channels crées
+ */
+void create_menu(char* buffer, Channel channels[], int count);
+
+/**
+ * Cette fonction permet de gérer le choix du client
+ * par rapport au menu principal.
+ * 
+ * choice : pointeur vers le choix du client
+ * buffer : le buffer utilisé pour construire la réponse à
+ *          envoyer au client en fonction de son choix
+ * channels : tableau des channels
+ * count : nombre totale de channels crées
+ */
+void handle_client_choice(int* choice, char* buffer, Channel channels[], int count);
+
+/**
  * Cette fonction permet de récupérer le signal 
  * envoyé au processus pour ensuite appeler 
  * les fonctions adéquates.
@@ -363,19 +385,7 @@ int main(int argc, char *argv[]) {
             }
 
             /* Construction du menu principal */
-            snprintf(buffer, buffer_size - 1, "Bienvenue sur ServerClientChat !\n Choisissez un channel :\n");
-            for (int i = 0; i < channels_count; i++) {
-                char number[20];
-                int choiceNum = i + 1;
-                snprintf(number, sizeof(number), "%d) ", choiceNum);
-                strcat(buffer, number);
-                strcat(buffer, channels[i].name);
-                strcat(buffer, "\n");
-            }
-            char lastNumber[40];
-            int lastChoiceNum = channels_count + 1;
-            snprintf(lastNumber, sizeof(lastNumber), "%d) Créer un channel\n", lastChoiceNum);
-            strcat(buffer, lastNumber);
+            create_menu(buffer, channels, channels_count);
 
             /* Envoi du menu principal */
             if (write((*new_client_socket), buffer, strlen(buffer) + 1) < 0) {
@@ -395,25 +405,11 @@ int main(int argc, char *argv[]) {
                 free(new_client_socket);
                 continue;
             } 
-
             buffer[nb_bytes] = '\0';
-            int choice = atoi(buffer);
 
-            /* Envoie au client ip et port du channel */
-            if (choice > 0 && choice <= channels_count) {
-                char port_str[6];
-                char temp_addr[26];
-                snprintf(port_str, sizeof(port_str), "%d", channels[(choice - 1)].port);
-                strncpy(temp_addr, channels[(choice - 1)].ip, sizeof(temp_addr));
-                strcat(temp_addr, ":");
-                strcat(temp_addr, port_str);
-                snprintf(buffer, buffer_size - 1, "%s\n", temp_addr);
-            } else if (choice == (channels_count + 1)) {
-                snprintf(buffer, buffer_size - 1, "Saisir le nom du channel :");
-            } else { 
-                snprintf(buffer, buffer_size - 1, "Choix invalide\n");
-                choice = -1; 
-            }
+            /* Traitement du choix du client */
+            int choice = atoi(buffer);
+            handle_client_choice(&choice, buffer, channels, channels_count);
 
             if (write((*new_client_socket), buffer, strlen(buffer) + 1) < 0) {
                 perror("[ERROR] Envoi info channel impossible\n");
@@ -506,16 +502,45 @@ void setup_addr(int argc, char *argv[], struct sockaddr_in *addr) {
     (*addr).sin_addr.s_addr = inet_addr(addr_inet);
     (*addr).sin_port = htons(port);
 
-    if (argc == 3) {
-        (*addr).sin_addr.s_addr = inet_addr(argv[1]);
-        (*addr).sin_port = htons(atoi(argv[2]));
-    } else if (argc == 2) {
-        (*addr).sin_addr.s_addr = inet_addr(argv[1]);
-        (*addr).sin_port = htons(port);
+    if (argc >= 2) { (*addr).sin_addr.s_addr = inet_addr(argv[1]); }
+    if (argc == 3) { (*addr).sin_port = htons(atoi(argv[2])); }
+}
+
+void create_menu(char* buffer, Channel channels[], int count) {
+    strcpy(buffer, "");
+    for (int i = 0; i < count; i++) {
+        char number[20];
+        int choiceNum = i + 1;
+        snprintf(number, sizeof(number), "  %d) ", choiceNum);
+        strcat(buffer, number);
+        strcat(buffer, channels[i].name);
+        strcat(buffer, "\n");
+    }
+    char lastNumber[40];
+    int lastChoiceNum = count + 1;
+    snprintf(lastNumber, sizeof(lastNumber), "  %d) Créer un channel\n", lastChoiceNum);
+    strcat(buffer, lastNumber);
+}
+
+void handle_client_choice(int* choice, char* buffer, Channel channels[], int count) {
+    if ((*choice) > 0 && (*choice) <= count) {
+        char port_str[6];
+        char temp_addr[26];
+        snprintf(port_str, sizeof(port_str), "%d", channels[((*choice) - 1)].port);
+        strncpy(temp_addr, channels[((*choice) - 1)].ip, sizeof(temp_addr));
+        strcat(temp_addr, ":");
+        strcat(temp_addr, port_str);
+        snprintf(buffer, buffer_size - 1, "%s\n", temp_addr);
+    } else if ((*choice) == (count + 1)) {
+        snprintf(buffer, buffer_size - 1, "$CHANNEL_NAME");
+    } else { 
+        snprintf(buffer, buffer_size - 1, "$INVALID_CHOICE");
+        (*choice) = -1; 
     }
 }
 
 void handle_signal(int signal) {
+    off_server = 1;
     if (signal == SIGCHLD) {
         while (waitpid(-1, NULL, WNOHANG) > 0) { }
     } else if (signal == SIGINT) {
@@ -523,8 +548,6 @@ void handle_signal(int signal) {
         for (int i = 0; i < child_count; i++) {
             kill(child_pids[i], SIGTERM);
         }
-
-        off_server = 1;
         printf("\n");
         close(main_socket);
     }
@@ -533,10 +556,14 @@ void handle_signal(int signal) {
 int send_history(Client* client) {
     int error = 0;
 
+    pthread_mutex_lock(&clients_mutex);
     char* path = (char*)malloc(sizeof(char) * path_history_size);
+    pthread_mutex_unlock(&clients_mutex);
     if (path == NULL) { return ERR_SEND_HISTORY; }
 
+    pthread_mutex_lock(&clients_mutex);
     char* line = (char*)malloc(sizeof(char) * line_history_size);
+    pthread_mutex_unlock(&clients_mutex);
     if (line == NULL) {
         free(path); 
         return ERR_SEND_HISTORY; 
@@ -550,7 +577,7 @@ int send_history(Client* client) {
     if (file == NULL) { file = fopen(path, "w+"); }
 
     if (file != NULL) {
-        while (fgets(line, line_history_size -2, file) != NULL) {
+        while (fgets(line, line_history_size -1, file) != NULL) {
             if (write((*client).socket, line, strlen(line) + 1) < 0) {
                 error = ERR_SEND_HISTORY;
                 break;
@@ -573,18 +600,16 @@ void add_date_msg(char* buffer_msg_date, char* buffer_msg, size_t size_msg_date)
 
 int save_msg(const char* channel_name, const char* msg) {
     int error = 0;
-
     char* path = (char*)malloc(sizeof(char) * path_history_size);
     if (path == NULL) { return ERR_WRITE_HISTORY; }
 
     pthread_mutex_lock(&clients_mutex);
     snprintf(path, sizeof(char) * path_history_size, "data/%s", channel_name);
     strcat(path, "_h.txt");
-    FILE* file = fopen(path, "a+");
 
-    if (file != NULL) {
-        fprintf(file, "%s", msg);
-    } else { error = ERR_WRITE_HISTORY; } 
+    FILE* file = fopen(path, "a+");
+    if (file != NULL) { fprintf(file, "%s", msg); } 
+    else { error = ERR_WRITE_HISTORY; } 
          
     fclose(file);
     free(path);
