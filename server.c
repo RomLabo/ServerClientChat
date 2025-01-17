@@ -70,14 +70,15 @@ enum error_type {
     Variables
 */
 
+volatile int off_server = 0;
 int main_socket;
-int off_server = 0;
 int clients_curr_size = 6;
 int* clients = NULL;
 int clients_count = 0;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER; 
 pid_t child_pids[10];
 int child_count = 0;
+pthread_t threads[6];
 
 typedef struct {
     char name[50];
@@ -134,6 +135,14 @@ void handle_client_choice(int* choice, char* buffer, Channel channels[], int cou
  * sig : numéro du signal  
  */
 void handle_signal(int sig);
+
+/**
+ * Cette fonction permet de gérer le signal
+ * au niveau des channels.
+ * 
+ * sig : numéro du signal  
+ */
+void handle_signal_channel(int sig);
 
 /**
  * Cette fonction permet d'envoyer l'historique 
@@ -284,7 +293,8 @@ int main(int argc, char *argv[]) {
 
     /* Gestion des signaux */
     action.sa_handler = &handle_signal;
-    if (sigaction(SIGINT, &action, NULL) < 0) {
+    if (sigaction(SIGINT, &action, NULL) < 0 ||
+        sigaction(SIGCHLD, &action, NULL) < 0) {
         perror("[ERROR] Gestion signaux impossible\n");
         return ERR_HANDLE_SIG;
     }
@@ -343,6 +353,15 @@ int main(int argc, char *argv[]) {
 
         pid_t pid = fork();
         if (pid == 0) {
+            struct sigaction sa;
+            sa.sa_handler = &handle_signal_channel;  
+            sa.sa_flags = 0;              
+            sigemptyset(&sa.sa_mask);      
+            if (sigaction(SIGTERM, &sa, NULL) < 0) {
+                perror("[ERROR] Gestion signaux channel impossible\n");
+                exit(0);
+            }
+
             start_channel(channel_name, ip_server, port);
             exit(0);
         } else if (pid > 0) {
@@ -475,6 +494,14 @@ int main(int argc, char *argv[]) {
 
             pid_t pid = fork();
             if (pid == 0) {
+                struct sigaction sa;
+                sa.sa_handler = &handle_signal_channel;  
+                sa.sa_flags = 0;              
+                sigemptyset(&sa.sa_mask);      
+                if (sigaction(SIGTERM, &sa, NULL) < 0) {
+                    perror("[ERROR] Gestion signaux channel impossible\n");
+                    exit(0);
+                }
                 start_channel(buffer, ip_server, last_port);
                 exit(0);
             } else if (pid > 0) {
@@ -551,6 +578,22 @@ void handle_signal(int signal) {
         printf("\n");
         close(main_socket);
     }
+}
+
+void handle_signal_channel(int sig) {
+    off_server = 1;
+    
+    /*pthread_mutex_lock(&clients_mutex);
+    int nb_threads = clients_count;
+    pthread_mutex_unlock(&clients_mutex);*/
+
+    printf("[INFO] Channel signal SIGTERM reçu\n");
+
+    /*for (int i = 0; i < nb_threads; i++) {
+        pthread_join(threads[i], NULL);
+        printf("[INFO] Thread channel %d terminé.\n", i);
+    }*/
+    exit(0); 
 }
 
 int send_history(Client* client) {
@@ -703,30 +746,32 @@ void handle_client(void* client) {
     }
 
     while (nb_bytes > 0 && off_server == 0) {
-        if (read((*client_ptr).socket, &msg_size, sizeof(size_t)) <= 0) {
+        if (read((*client_ptr).socket, &msg_size, sizeof(size_t)) <= 0 || off_server == 1) {
             break;
         } 
 
-        msg_date_size = msg_size + date_size;
+        if (off_server == 0) {
+            msg_date_size = msg_size + date_size;
         
-        char* msg = (char*)malloc(sizeof(char) * msg_size);
-        char* msg_with_date = (char*)malloc(sizeof(char) * msg_date_size);
-        if (msg == NULL || msg_with_date == NULL) {
-            perror("[ERROR] Allocation message client impossible\n");
-            break;
+            char* msg = (char*)malloc(sizeof(char) * msg_size);
+            char* msg_with_date = (char*)malloc(sizeof(char) * msg_date_size);
+            if (msg == NULL || msg_with_date == NULL) {
+                perror("[ERROR] Allocation message client impossible\n");
+                break;
+            }
+
+            nb_bytes = read((*client_ptr).socket, msg, sizeof(char) * msg_size);
+            msg[nb_bytes] = '\0';
+
+            add_date_msg(msg_with_date, msg, msg_date_size);
+            if (save_msg((*client_ptr).channel_name, msg_with_date) < 0) {
+                perror("[ERROR] Sauvegarde message impossible\n");
+            }
+
+            broadcast_msg(msg_with_date);
+            free(msg);
+            free(msg_with_date);
         }
-
-        nb_bytes = read((*client_ptr).socket, msg, sizeof(char) * msg_size);
-        msg[nb_bytes] = '\0';
-
-        add_date_msg(msg_with_date, msg, msg_date_size);
-        if (save_msg((*client_ptr).channel_name, msg_with_date) < 0) {
-            perror("[ERROR] Sauvegarde message impossible\n");
-        }
-
-        broadcast_msg(msg_with_date);
-        free(msg);
-        free(msg_with_date);
     }
 
     if (remove_client(&clients, client_ptr) < 0) {
