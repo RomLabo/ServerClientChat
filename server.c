@@ -23,24 +23,19 @@
     Constantes
 */
 
-// Paramètres socket
-const int sock_domain = AF_INET;
-const int sock_type = SOCK_STREAM;
-const int sock_protocol = 0;
-const int port = 8080;
-const char addr_inet[10] = "127.0.0.1";
-
 // Paramètyres généraux
 const int buffer_size = 1024;
-const int max_channels = 10;
 const char acquit_msg[4] = "ACK";
 
 // Code erreur de l'application
 enum error_type {
-    ERR_TOO_MUCH_ARG = 2, ERR_CREATE_SOCKET,
+    ERR_TOO_MUCH_ARG = -30, ERR_CREATE_SOCKET,
     ERR_BIND_SOCKET, ERR_LISTEN_SOCKET,
     ERR_CONNECT_SERVER, ERR_READ_ACK, 
-    ERR_HANDLE_SIG, ERR_READ_CHANNELS
+    ERR_HANDLE_SIG, ERR_READ_CONFIG_FILE,
+    ERR_READ_CONFIG, ERR_READ_CHANNELS_FILE,
+    ERR_READ_CHANNELS, ERR_IP_ALLOC, 
+    ERR_PORT_ALLOC
 };
 
 /*
@@ -55,21 +50,16 @@ int id_clients = 0;
 
 typedef struct {
     int id;
-    char* nom;
-} Channel;
-
-typedef struct {
-    int id;
     int socket;
-    const Channel* channel;
+    const char* channel_name;
 } Client;
 
 Client clients[30];
-Channel* channels = NULL;
+char* channels[10];
 char* menu = NULL;
 
 int client_count = 0;
-int nb_channel = 0;
+int* nb_channels = NULL;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER; 
 
 /*
@@ -78,7 +68,10 @@ pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 void handle_signal(int sig);
 void send_acquit(int *socket);
 void shut_down(void);
-void setup_addr(int argc, char *argv[], struct sockaddr_in *addr);
+
+void get_config(FILE* file, char* ip, char* port);
+void create_menu(FILE* file, char* menu, int* nb_channels, int max_channels);
+struct sockaddr_in create_addr(char* ip, char* port);
 void handle_client(void *socket_client);
 
 void get_time(void);
@@ -89,7 +82,7 @@ void add_date_msg(char* buffer, const char* msg);
 void broadcast_msg(int client_id, const char* message);
 void remove_client(int client_socket);
 void handle_client(void *socket_desc);
-void free_channels(Channel* channels, int count);
+//void free_channels(char* channels, int count);
 
 /*
     Main
@@ -97,30 +90,51 @@ void free_channels(Channel* channels, int count);
 
 int main(int argc, char *argv[]) {
     struct sigaction action;
-    struct sockaddr_in addr_client, addr_server;
+    struct sockaddr_in addr_client;
+    struct sockaddr_in addr_server;
+
     socklen_t addr_len = sizeof(addr_client);
     pthread_attr_t attr;
-    int *new_socket;
     
-    printf("[INFO] Démarrage du serveur\n");
+    char* addr_inet = NULL;
+    char* addr_port = NULL;
 
-    if (argc > 3) {
-        printf("[ERROR] Trop d arguments renseignés \n");
-        printf("[INFO] Arrêt du serveur\n");
-        return ERR_TOO_MUCH_ARG;
+    int *new_socket;
+    int max_channels = 10;
+
+    addr_inet = (char*)malloc(sizeof(char) * 100);
+    if (addr_inet == NULL) {
+        perror("[ERROR] Allocation adresse ip impossible\n");
+        close(socket_server);
+        return ERR_IP_ALLOC;
     }
 
-    /* Configuration de l'adresse du serveur */
-    setup_addr(argc, argv, &addr_server);
+    addr_port = (char*)malloc(sizeof(char) * 30);
+    if (addr_inet == NULL) {
+        perror("[ERROR] Allocation port impossible\n");
+        close(socket_server);
+        return ERR_PORT_ALLOC;
+    }
 
-    /* Gestion des signaux */
+    FILE* file = fopen("settings/server.conf", "r");
+    if (file == NULL) {
+        close(socket_server);
+        perror("[ERROR] Lecture fichier configuration impossible\n");
+        return ERR_READ_CONFIG_FILE;
+    }
+
+    get_config(file, addr_inet, addr_port);
+    fclose(file);
+    addr_server = create_addr(addr_inet, addr_port);
+    printf("[INFO] Démarrage du serveur\n");
+
     action.sa_handler = &handle_signal;
     if (sigaction(SIGINT, &action, NULL) < 0) {
         perror("[ERROR] Gestion signaux impossible\n");
         return ERR_HANDLE_SIG;
     }
 
-    socket_server = socket(sock_domain, sock_type, sock_protocol);
+    socket_server = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_server < 0) {
         perror("[ERROR] Création socket impossible\n");
         return ERR_CREATE_SOCKET;
@@ -139,46 +153,44 @@ int main(int argc, char *argv[]) {
     }
 
     printf("[INFO] Démarrage ecoute connexion\n");
-    printf("[CONFIG] %s:%d\n", addr_inet, port);
+    printf("[CONFIG] %s:%s\n", addr_inet, addr_port);
 
-    /* Récupération des noms des channels */
-    FILE* file = fopen("data/channels.txt", "r");
+    free(addr_inet);
+    free(addr_port);
+
+    file = fopen("settings/channels.conf", "r");
     if (file == NULL) {
         close(socket_server);
-        perror("[ERROR] Lecture channels impossible\n");
-        return ERR_READ_CHANNELS;
+        perror("[ERROR] Lecture fichier channels impossible\n");
+        return ERR_READ_CHANNELS_FILE;
     }
-
-    char line[100];
-    channels = malloc(max_channels * sizeof(Channel));
+    
     menu = (char*)malloc(sizeof(char) * buffer_size);
     if (menu == NULL) {
         perror("[ERROR] Allocation pour reception choix client impossible\n");
         close(socket_server);
         return -1;
     }
+    menu[0] = '\0';
 
-    while (fgets(line, sizeof(line), file) && nb_channel <= max_channels) {
-        line[strcspn(line, "\n")] = 0;
-        if (strlen(line) == 0) continue;
-        int id_channel = (nb_channel + 1);
-        char number[4];
-        channels[nb_channel].id = id_channel;
-        channels[nb_channel].nom = strdup(line);
-
-        snprintf(number, sizeof(number), "%d) ", id_channel);
-        strcat(menu, number);
-        strcat(menu, channels[nb_channel].nom );
-        strcat(menu, "\n");
-        
-        nb_channel++;
+    nb_channels = (int*)malloc(sizeof(int) * 2);
+    if (nb_channels == NULL) {
+        perror("[ERROR] Allocation adresse ip impossible\n");
+        close(socket_server);
+        return ERR_IP_ALLOC;
     }
+    (*nb_channels) = 0;
 
+    create_menu(file, menu, nb_channels, max_channels);
     fclose(file);
 
-    printf(menu);
+    if ((*nb_channels) < 1) {
+        close(socket_server);
+        perror("[ERROR] Lecture channels impossible\n");
+        return ERR_READ_CHANNELS;
+    }
 
-    /*while (off_server == 0) {
+    while (off_server == 0) {
         new_socket = malloc(sizeof(int));
         *new_socket = accept(socket_server, (struct sockaddr*)&addr_client, &addr_len);
         if (*new_socket < 0 && off_server == 0) {
@@ -189,17 +201,16 @@ int main(int argc, char *argv[]) {
 
         if (off_server == 0) {
             send_acquit(new_socket);
-
             pthread_t thread_id;
             pthread_attr_init(&attr);
             pthread_create(&thread_id, &attr, (void*)handle_client, (void*)new_socket);
             pthread_detach(thread_id);
         }
-    }*/
+    }
 
     close(socket_server);
     free(menu);
-    free_channels(channels, nb_channel);
+    //free_channels(channels, nb_channels);
     printf("[INFO] Arrêt du serveur\n");
     return EXIT_SUCCESS;
 }
@@ -234,7 +245,7 @@ void get_time(void) {
 void broadcast_msg(int client_id, const char* message) {
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i < client_count; i++) {
-        if (strcmp((*clients[i].channel).nom, (*clients[client_id].channel).nom) == 0) {
+        if (strcmp(clients[i].channel_name, clients[client_id].channel_name) == 0) {
             if (send(clients[i].socket, message, strlen(message) + 1, 0) < 0) {
                 perror("[ERROR] Diffusion du message impossible\n");
             }
@@ -243,27 +254,53 @@ void broadcast_msg(int client_id, const char* message) {
     pthread_mutex_unlock(&clients_mutex);
 }
 
-void setup_addr(int argc, char *argv[], struct sockaddr_in *addr) {
-    (*addr).sin_family = sock_domain;
-    (*addr).sin_addr.s_addr = inet_addr(addr_inet);
-    (*addr).sin_port = htons(port);
-
-    if (argc == 3) {
-        (*addr).sin_addr.s_addr = inet_addr(argv[1]);
-        (*addr).sin_port = htons(atoi(argv[2]));
-    } else if (argc == 2) {
-        (*addr).sin_addr.s_addr = inet_addr(argv[1]);
-        (*addr).sin_port = htons(port);
+void get_config(FILE* file, char* ip, char* port) {
+    char line[100];
+    int nb_line = 0;
+    while (fgets(line, sizeof(line), file)) {
+        line[strcspn(line, "\n")] = 0;
+        if (strlen(line) == 0) continue;
+        if (nb_line == 0) { strncpy(ip, line, 100);  } 
+        else if (nb_line == 1) { strncpy(port, line, 30); }
+        nb_line ++; 
     }
 }
 
+void create_menu(FILE* file, char* menu, int* nb_channels, int max_channels) {
+    char line[100];
+    while (fgets(line, sizeof(line), file) && (*nb_channels) <= max_channels) {
+        printf("%d\n", (*nb_channels));
+        line[strcspn(line, "\n")] = 0;
+        if (strlen(line) == 0) continue;
+        int channel_id = ((*nb_channels) + 1);
+        char number[14];
+        char* channel_name = strdup(line);
+        channels[(*nb_channels)] = channel_name;
+        snprintf(number, sizeof(number), "%d) ", channel_id);
+        strcat(menu, number);
+        strcat(menu, channels[(*nb_channels)]);
+        strcat(menu, "\n");
+        (*nb_channels) += 1;
+    }
+}
+
+struct sockaddr_in create_addr(char* ip, char* port) {
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(ip);
+    addr.sin_port = htons(atoi(port));
+    return addr; 
+}
+
 void remove_client(int client_socket) {
+    int i = 0;
     pthread_mutex_lock(&clients_mutex);
-    for (int i = 0; i < client_count; i++) {
+    while (i < client_count) {
         if (clients[i].socket == client_socket) {
             clients[i] = clients[--client_count];
             break;
         }
+        i ++;
     }
     pthread_mutex_unlock(&clients_mutex);
     close(client_socket);
@@ -273,21 +310,33 @@ void handle_client(void *socket_desc) {
     int client_socket = *(int*)socket_desc;
     free(socket_desc);
 
+    int client_id = 0;
     char buffer[buffer_size];
+    char buffer2[buffer_size];
     char buffer_msg_date[buffer_size];
 
-    /*pthread_mutex_lock(&clients_mutex);
+    if (send(client_socket, menu, strlen(menu) + 1, 0) < 0) {
+        close(client_socket);
+    }
+    
+    int bytes_received = read(client_socket, buffer2, sizeof(buffer2));
+    if (bytes_received <= 0) {
+        close(client_socket);
+    }
+    
+    buffer2[bytes_received] = '\0';
+    int choice = atoi(buffer2);
 
-
+    pthread_mutex_lock(&clients_mutex);
+    if (choice > (*nb_channels) || choice <= 0) { choice = 0; }
+    client_id = client_count;
     clients[client_count].id = client_count;
-    clients[client_count].channel = &general;
+    clients[client_count].channel_name = channels[choice - 1];
     clients[client_count].socket = client_socket;
     client_count ++;
-    pthread_mutex_unlock(&clients_mutex);*/
+    pthread_mutex_unlock(&clients_mutex);
 
-    /*printf("[INFO] client %d connecté\n", client_id);
-    snprintf(buffer, sizeof(buffer), "Bienvenue sur WeeChat !\n\n");
-    send(client_socket, buffer, strlen(buffer), 0);
+    printf("[INFO] client %d connecté\n", client_id);
     send_history(client_id);
 
     while (1) {
@@ -302,43 +351,39 @@ void handle_client(void *socket_desc) {
             save_msg(client_id, buffer_msg_date);
             broadcast_msg(client_id, buffer_msg_date);
         }
-    }*/
+    }
     
     pthread_exit(NULL);
 }
 
 void save_msg(int client_id, const char* msg) {
-    char file_name[50];
-
+    char path[70];
     pthread_mutex_lock(&clients_mutex);
-    strcpy(file_name, clients[client_id].channel->nom);
+    snprintf(path, sizeof(path), "data/%s_h.txt", clients[client_id].channel_name);
     pthread_mutex_unlock(&clients_mutex);
 
-    strcat(file_name, "_h.txt");
-    FILE* file = fopen(file_name, "a");
-
-    if (file != NULL) {
-        fprintf(file, "%s", msg);
-    } else { perror("[ERROR] Sauvegarde message impossible\n"); }
+    FILE* file = fopen(path, "a");
+    if (file != NULL) { fprintf(file, "%s", msg); } 
+    else { perror("[ERROR] Sauvegarde message impossible\n"); }
     fclose(file);
 }
 
 void send_history(int client_id) {
-    char channel_name[60];
-    int socket_val;
+    char path[70];
+    int socket;
 
     pthread_mutex_lock(&clients_mutex);
-    strcpy(channel_name, clients[client_id].channel->nom);
-    socket_val = clients[client_id].socket;
+    snprintf(path, sizeof(path), "data/%s_h.txt", clients[client_id].channel_name);
+    socket = clients[client_id].socket;
     pthread_mutex_unlock(&clients_mutex);
     
-    strcat(channel_name, "_h.txt");
-    FILE* file = fopen(channel_name, "r");
+    FILE* file = fopen(path, "r");
+    if (file == NULL) { file = fopen(path, "w+"); }
 
     if (file != NULL) {
         char line[buffer_size];
         while (fgets(line, sizeof(line), file) != NULL) {
-            send(socket_val, line, strlen(line), 0);
+            send(socket, line, strlen(line), 0);
         }
     } else { perror("[ERROR] Recuperation historique impossible"); }
     fclose(file);
@@ -349,11 +394,4 @@ void add_date_msg(char* buffer, const char* msg) {
     struct tm tm = *localtime(&t);
     snprintf(buffer, 75, "%d-%02d-%02d %02d:%02d:%02d : ", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
     strcat(buffer, msg);
-}
-
-void free_channels(Channel* channels, int count) {
-    for (int i = 0; i < count; i++) {
-        free(channels[i].nom);
-    }
-    free(channels);
 }

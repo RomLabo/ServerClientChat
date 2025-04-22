@@ -117,12 +117,27 @@ int main(int argc, char *argv[]) {
     /* Attente de l'acquittement connection */
     wait_acquit();
 
+    /* Boucle principale pour la gestion de l'envoi des messages. */
+    printf("Bienvenue sur ServerClientChat \n\n");
+    printf("Veuillez saisir le numéro du channel sur lequel vous voulez vous connecter\n");
+
+    int nb_bytes = read(socket_client, buffer, buffer_size);
+    if (nb_bytes <= 0) {
+        printf("Erreur: Le serveur ne répond pas\n");
+        close(socket_client);
+        return -1;
+    }
+
+    printf("%s\n", buffer);
+    char* buffer2 = malloc(sizeof(char) * 100);
+    fgets(buffer2, 100, stdin);
+    write(socket_client, buffer2, sizeof(buffer2));
+
     /* Créatiion d'un thread pour la réception des message
        afin de ne pas bloquer l'envoi de message */
     pthread_attr_init(&attr);
     pthread_create(&thread_id, &attr,(void*)receive_msg, &socket_client);
-
-    /* Boucle principale pour la gestion de l'envoi des messages. */
+   
     while (off_send == 0) {
         if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
             printf("\033[A\33[2K\r");
