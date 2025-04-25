@@ -115,7 +115,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Attente de l'acquittement connection */
-    wait_acquit();
+    //wait_acquit();
 
     /* Boucle principale pour la gestion de l'envoi des messages. */
     printf("Bienvenue sur ServerClientChat \n\n");
@@ -184,6 +184,7 @@ void wait_acquit(void) {
             exit(ERR_READ_ACK);
         }
     }
+    printf("ack\n");
     /* Réinitialisation du message d'acquittement */
     strcpy(acquit_msg, "");
 }

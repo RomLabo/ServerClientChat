@@ -2,7 +2,7 @@
 
 ServerClientChat est une application de chat client/serveur en C permettant
 d'échanger des messages entre plusieurs utilisateurs connectés sur un
-channel. De plus, l'utilisateur a la possibilité de créer un nouveau channel. 
+channel.  
 
 /!\ L'application client gtk n'est pas à jour pour l'instant,
     elle ne fonctionnera pas avec la version actuelle de 
@@ -13,14 +13,13 @@ pour compiler l'application client utilisant la librairie GTK
 
 pour compiler l'application client console 
 ##
-        gcc client_console.c -o client -Wall
+        gcc client.c -o client -Wall
 
 pour compiler l'application server
 ##
         gcc server.c -o server -Wall
 
-Par défaut le serveur écoute sur l'adresse 127.0.0.1 
-et sur le port 8080. 
+Par défaut le serveur écoute sur l'adresse 127.0.0.1 et sur le port 8080. 
 Au lancement du programme server on peut spécifier une 
 adresse et port différent. Il faudra alors également spécifier
 l'adresse et le port du serveur lors du démarrage de l'application client.
