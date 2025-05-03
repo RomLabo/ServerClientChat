@@ -9,11 +9,11 @@ channel. De plus, l'utilisateur a la possibilité de créer un nouveau channel.
     l'application server. 
 pour compiler l'application client utilisant la librairie GTK 
 ##
-        gcc client_gtk.c -o client $(pkg-config --cflags --libs gtk+-3.0)
+        gcc gtk/client_gtk.c -o client $(pkg-config --cflags --libs gtk+-3.0)
 
 pour compiler l'application client console 
 ##
-        gcc client_console.c -o client -Wall
+        gcc client.c -o client -Wall
 
 pour compiler l'application server
 ##
