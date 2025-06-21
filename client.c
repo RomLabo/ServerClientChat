@@ -119,8 +119,16 @@ int main(int argc, char *argv[]) {
 
     /* Boucle principale pour la gestion de l'envoi des messages. */
     printf("Bienvenue sur ServerClientChat \n\n");
-    printf("Veuillez saisir le numéro du channel sur lequel vous voulez vous connecter\n");
+    printf("Veuillez saisir votre pseudo\n");
+    char pseudo[buffer_size];
+    //fgets(pseudo, buffer_size - 1, stdin);
+    if (fgets(pseudo, sizeof(pseudo), stdin) != NULL) {
+        printf("\033[A\33[2K\r");
+        send(socket_client, pseudo, strlen(pseudo) + 1, 0);
+    }
+    //write(socket_client, pseudo, buffer_size - 1);
 
+    printf("Veuillez saisir le numéro du channel sur lequel vous voulez vous connecter\n");
     int nb_bytes = read(socket_client, buffer, buffer_size);
     if (nb_bytes <= 0) {
         printf("Erreur: Le serveur ne répond pas\n");

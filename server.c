@@ -45,6 +45,7 @@ enum error_type {
 typedef struct {
     int socket;
     const char* channel_name;
+    const char* pseudo;
 } Client;
 
 Client clients[30];
@@ -70,10 +71,10 @@ int get_menu_choice(int socket, char* response, int nb_channels);
 
 void save_msg(const char* channel_name, const char* msg);
 void send_history(int socket, const char* channel_name);
-void add_time_msg(char* buffer, const char* msg);
+void add_time_msg(char* buffer, const char* msg, const char* pseudo);
 void broadcast_msg(const char* channel_name, const char* message);
 
-void add_client(int socket, const char* channel_name);
+void add_client(Client* client);
 void remove_client(int socket);
 void handle_client(void* temp_client);
 
@@ -182,6 +183,15 @@ int main(int argc, char *argv[]) {
         }
 
         if (off_server == 0) {
+            char pseudo[buffer_size];
+            int nb_bytes = read((*new_socket), pseudo, buffer_size);
+            if (nb_bytes <= 0) { 
+                close((*new_socket));
+                free(new_socket);
+                continue; 
+            }
+            pseudo[buffer_size] = '\0';
+
             char buffer2[buffer_size];
             if (send((*new_socket), menu, strlen(menu) + 1, 0) < 0) {
                 close((*new_socket));
@@ -205,7 +215,8 @@ int main(int argc, char *argv[]) {
 
             (*client).socket = (*new_socket);
             (*client).channel_name = channels[choice];
-            add_client((*new_socket), channels[choice]);
+            (*client).pseudo = pseudo;
+            add_client(client);
             free(new_socket);
 
             pthread_t thread_id;
@@ -288,13 +299,14 @@ int get_menu_choice(int socket, char* response, int nb_channels) {
     return choice;
 }
 
-void add_client(int socket, const char* channel_name) {
+void add_client(Client* client) {
     pthread_mutex_lock(&clients_mutex);
-    clients[client_count].socket = socket;
-    clients[client_count].channel_name = channel_name; 
+    clients[client_count].socket = (*client).socket;
+    clients[client_count].channel_name = (*client).channel_name;
+    clients[client_count].pseudo = (*client).pseudo; 
     client_count ++;
     pthread_mutex_unlock(&clients_mutex);
-    printf("[INFO] client %d connecté\n", socket);
+    printf("[INFO] client %d connecté\n", (*client).socket);
 }
 
 void remove_client(int socket) {
@@ -315,6 +327,7 @@ void remove_client(int socket) {
 void handle_client(void *temp_client) {
     int socket = (*(Client*)temp_client).socket;
     const char* channel_name = (*(Client*)temp_client).channel_name;
+    const char* pseudo = (*(Client*)temp_client).pseudo;
     free(temp_client);
 
     char msg[buffer_size];
@@ -326,7 +339,8 @@ void handle_client(void *temp_client) {
         if (nb_bytes <= 0) { break; }
         msg[nb_bytes] = '\0';
         if (strcmp(msg, "/quitter\n") == 0) { break; }
-        add_time_msg(msg_date, msg);
+
+        add_time_msg(msg_date, msg, pseudo);
         save_msg(channel_name, msg_date);
         broadcast_msg(channel_name, msg_date);
     }
@@ -365,9 +379,9 @@ void send_history(int socket, const char* channel_name) {
     pthread_mutex_unlock(&clients_mutex);
 }
 
-void add_time_msg(char* buffer, const char* msg) {
+void add_time_msg(char* buffer, const char* msg, const char* pseudo) {
     time_t t = time(NULL);
-    snprintf(buffer, buffer_size, "%ld : %s", t, msg);
+    snprintf(buffer, buffer_size, "%ld : (%s) %s", t, pseudo, msg);
 }
 
 void send_acquit(int *socket) {
